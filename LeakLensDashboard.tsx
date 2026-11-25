@@ -51,6 +51,9 @@ interface LeaseResponse {
     status_message: string
 }
 
+const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website/"
+const BACKEND_URL = "https://optimal-symptoms-letters-modem.trycloudflare.com"
+
 export default function LeakLensDashboard(props: {
     apiUrl?: string
     brandName?: string
@@ -60,20 +63,49 @@ export default function LeakLensDashboard(props: {
     requireAuthGuard?: boolean
 }) {
     const {
-        apiUrl = "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        apiUrl = BACKEND_URL,
         brandName = "LeakLens",
         accentColor = "#7B5CFA",
         googleClientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
-        loginUrl = "https://linklenslogin.framer.website/",
-        requireAuthGuard = false,
+        loginUrl = FRAMER_LOGIN_URL,
+        requireAuthGuard = true,
     } = props
+
+    const isFramerEditor = React.useMemo(() => {
+        try {
+            return RenderTarget.current() === RenderTarget.canvas || RenderTarget.current() === RenderTarget.preview
+        } catch {
+            return false
+        }
+    }, [])
 
     // Allow user to edit custom API URL in the component if needed
     const [currentApiUrl, setCurrentApiUrl] = React.useState(apiUrl)
+    const normalizedBackendUrl = React.useMemo(
+        () => (currentApiUrl || BACKEND_URL).replace(/\/+$/, ""),
+        [currentApiUrl]
+    )
+    const buildApiHeaders = React.useCallback(
+        (extra: Record<string, string> = {}) => {
+            const headers: Record<string, string> = { ...extra }
+            if (normalizedBackendUrl.includes("ngrok")) {
+                headers["ngrok-skip-browser-warning"] = "true"
+            }
+            return headers
+        },
+        [normalizedBackendUrl]
+    )
+    const buildFramerLoginUrl = React.useCallback(() => {
+        const target = loginUrl || FRAMER_LOGIN_URL
+        if (typeof window === "undefined") return target
+        const sep = target.includes("?") ? "&" : "?"
+        return `${target}${sep}redirect=${encodeURIComponent(window.location.origin + window.location.pathname)}`
+    }, [loginUrl])
+
     const [showApiConfig, setShowApiConfig] = React.useState(false)
     const [apiStatus, setApiStatus] = React.useState<"checking" | "online" | "offline">("checking")
     const [authUser, setAuthUser] = React.useState<{ email: string; name: string; picture?: string } | null>(null)
-    const [checkingAuth, setCheckingAuth] = React.useState(requireAuthGuard)
+    const [checkingAuth, setCheckingAuth] = React.useState(requireAuthGuard && !isFramerEditor)
     const googleBtnRef = React.useRef<HTMLDivElement | null>(null)
     const inlineGateBtnRef = React.useRef<HTMLDivElement | null>(null)
 
@@ -241,8 +273,8 @@ export default function LeakLensDashboard(props: {
     // Check Backend Health on mount / url change & issue initial signed lease
     React.useEffect(() => {
         let isMounted = true
-        fetch(`${currentApiUrl}/`)
-            .then((r) => r.json())
+        fetch(`${normalizedBackendUrl}/api/health`, { headers: buildApiHeaders() })
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error("offline"))))
             .then(() => {
                 if (isMounted) setApiStatus("online")
             })
@@ -253,7 +285,7 @@ export default function LeakLensDashboard(props: {
         return () => {
             isMounted = false
         }
-    }, [currentApiUrl])
+    }, [normalizedBackendUrl, buildApiHeaders])
 
     // --- TAB 1: CALL /api/watermark ---
     const handleGenerateWatermark = async () => {
@@ -440,15 +472,7 @@ export default function LeakLensDashboard(props: {
     React.useEffect(() => {
         if (typeof window === "undefined") return
 
-        const isFramerEditor = (() => {
-            try {
-                return RenderTarget.current() === RenderTarget.canvas || RenderTarget.current() === RenderTarget.preview
-            } catch {
-                return false
-            }
-        })()
-
-        // A. Extract ?token=... (or fallback #access_token=...) passed back from https://linklenslogin.framer.website/
+        // A. Parse window.location.search for ?token=... (or fallback #access_token=...)
         const urlParams = new URLSearchParams(window.location.search)
         const tokenFromUrl = urlParams.get("token")
         const emailFromUrl = urlParams.get("email")
@@ -470,41 +494,33 @@ export default function LeakLensDashboard(props: {
         const storedToken = window.localStorage.getItem("access_token")
         if (!storedToken) {
             setCheckingAuth(false)
-            if (requireAuthGuard && loginUrl && !isFramerEditor) {
-                const sep = loginUrl.includes("?") ? "&" : "?"
-                window.location.href = `${loginUrl}${sep}redirect=${encodeURIComponent(window.location.origin + window.location.pathname)}`
+            if (requireAuthGuard && !isFramerEditor) {
+                window.location.href = buildFramerLoginUrl()
             }
             return
         }
 
-        if (storedToken) {
-            fetch(`${currentApiUrl}/api/auth/me`, {
-                headers: { Authorization: `Bearer ${storedToken}` },
+        fetch(`${normalizedBackendUrl}/api/auth/me`, {
+            headers: buildApiHeaders({ Authorization: `Bearer ${storedToken}` }),
+        })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+                if (d?.status === "authenticated" && d.user) {
+                    setAuthUser(d.user)
+                    setRecipientId(d.user.email)
+                    window.localStorage.setItem("user_email", d.user.email)
+                    window.localStorage.setItem("user_name", d.user.name || d.user.email)
+                } else {
+                    window.localStorage.clear()
+                    if (requireAuthGuard && !isFramerEditor) {
+                        window.location.href = buildFramerLoginUrl()
+                    }
+                }
             })
-                .then((r) => (r.ok ? r.json() : null))
-                .then((d) => {
-                    if (d?.status === "authenticated" && d.user) {
-                        setAuthUser(d.user)
-                        setRecipientId(d.user.email)
-                        window.localStorage.setItem("user_email", d.user.email)
-                        window.localStorage.setItem("user_name", d.user.name)
-                    } else {
-                        window.localStorage.removeItem("access_token")
-                        window.localStorage.removeItem("user_email")
-                        window.localStorage.removeItem("user_name")
-                        if (requireAuthGuard && loginUrl && !isFramerEditor) {
-                            const sep = loginUrl.includes("?") ? "&" : "?"
-                            window.location.href = `${loginUrl}${sep}redirect=${encodeURIComponent(window.location.origin + window.location.pathname)}`
-                        }
-                    }
-                })
-                .catch(() => {
-                    if (requireAuthGuard && loginUrl && !isFramerEditor) {
-                        window.location.href = loginUrl
-                    }
-                })
-                .finally(() => setCheckingAuth(false))
-        }
+            .catch((err) => {
+                console.error("Session verification error:", err)
+            })
+            .finally(() => setCheckingAuth(false))
         if (!googleClientId || googleClientId.startsWith("YOUR_GOOGLE_CLIENT_ID") || authUser) return
         const renderGis = () => {
             const g = (window as any).google
@@ -529,7 +545,7 @@ export default function LeakLensDashboard(props: {
         script.defer = true
         script.onload = renderGis
         document.head.appendChild(script)
-    }, [currentApiUrl, googleClientId, authUser, handleGoogleAuthResponse, requireAuthGuard, loginUrl])
+    }, [normalizedBackendUrl, buildApiHeaders, buildFramerLoginUrl, googleClientId, authUser, handleGoogleAuthResponse, requireAuthGuard, isFramerEditor])
 
     const handleRegenerate = React.useCallback(async () => {
         try {
@@ -681,15 +697,15 @@ export default function LeakLensDashboard(props: {
         return `${hrs.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
     }
 
-    if (requireAuthGuard && checkingAuth) {
+    if (!isFramerEditor && requireAuthGuard && checkingAuth) {
         return (
             <div style={{ padding: 48, textAlign: "center", color: "#F3F2F8", backgroundColor: "rgba(6, 6, 10, 0.72)", borderRadius: 16, fontFamily: "'Onest', 'Inter', sans-serif" }}>
-                Loading LinkLens...
+                Verifying LeakLens session...
             </div>
         )
     }
 
-    if (requireAuthGuard && !authUser) {
+    if (!isFramerEditor && requireAuthGuard && !authUser) {
         return (
             <div
                 style={{
@@ -715,7 +731,13 @@ export default function LeakLensDashboard(props: {
                 <p style={{ margin: "0 0 22px", fontSize: 13.5, color: "rgba(243, 242, 248, 0.68)", lineHeight: 1.5 }}>
                     Sign in or register with your Google account to unlock watermarking, forensic attribution, and offline DRM controls.
                 </p>
-                <div ref={inlineGateBtnRef} id="google-login-btn" style={{ display: "flex", justifyContent: "center" }} />
+                <div ref={inlineGateBtnRef} id="google-login-btn" style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} />
+                <a
+                    href={buildFramerLoginUrl()}
+                    style={{ fontSize: 12, color: "#2BD8C8", textDecoration: "underline" }}
+                >
+                    Open LeakLens Login Portal →
+                </a>
             </div>
         )
     }
@@ -832,9 +854,10 @@ export default function LeakLensDashboard(props: {
                                 type="button"
                                 onClick={() => {
                                     if (typeof window !== "undefined") {
-                                        window.localStorage.removeItem("access_token")
-                                        window.localStorage.removeItem("user_email")
-                                        window.localStorage.removeItem("user_name")
+                                        window.localStorage.clear()
+                                        if (!isFramerEditor) {
+                                            window.location.href = buildFramerLoginUrl()
+                                        }
                                     }
                                     setAuthUser(null)
                                 }}
@@ -873,8 +896,8 @@ export default function LeakLensDashboard(props: {
                     <button
                         onClick={() => {
                             setApiStatus("checking")
-                            fetch(`${currentApiUrl}/`)
-                                .then(() => setApiStatus("online"))
+                            fetch(`${normalizedBackendUrl}/api/health`, { headers: buildApiHeaders() })
+                                .then((r) => (r.ok ? setApiStatus("online") : setApiStatus("offline")))
                                 .catch(() => setApiStatus("offline"))
                         }}
                         style={{
@@ -2102,7 +2125,7 @@ addPropertyControls(LeakLensDashboard, {
     apiUrl: {
         type: ControlType.String,
         title: "API URL",
-        defaultValue: "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        defaultValue: BACKEND_URL,
     },
     brandName: {
         type: ControlType.String,
@@ -2122,11 +2145,11 @@ addPropertyControls(LeakLensDashboard, {
     loginUrl: {
         type: ControlType.String,
         title: "Login Page URL",
-        defaultValue: "https://linklenslogin.framer.website/",
+        defaultValue: FRAMER_LOGIN_URL,
     },
     requireAuthGuard: {
         type: ControlType.Boolean,
         title: "Require Login Guard",
-        defaultValue: false,
+        defaultValue: true,
     },
 })

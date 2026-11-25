@@ -29,7 +29,7 @@ export default function GoogleAuthButton(props: {
     onLoginSuccess?: (user: GoogleUser) => void
 }) {
     const {
-        apiUrl = "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        apiUrl = "https://optimal-symptoms-letters-modem.trycloudflare.com",
         clientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
         redirectUrl = "https://leaklens.framer.ai/",
         enableRedirect = true,
@@ -317,7 +317,7 @@ addPropertyControls(GoogleAuthButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        defaultValue: "https://optimal-symptoms-letters-modem.trycloudflare.com",
     },
     clientId: {
         type: ControlType.String,

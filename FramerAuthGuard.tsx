@@ -15,6 +15,9 @@ export interface AuthGuardUser {
     picture?: string
 }
 
+const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website/"
+const BACKEND_URL = "https://optimal-symptoms-letters-modem.trycloudflare.com"
+
 export default function FramerAuthGuard(props: {
     apiUrl?: string
     loginUrl?: string
@@ -24,8 +27,8 @@ export default function FramerAuthGuard(props: {
     onAuthenticated?: (user: AuthGuardUser) => void
 }) {
     const {
-        apiUrl = "https://civilian-endorsement-invalid-items.trycloudflare.com",
-        loginUrl = "https://linklenslogin.framer.website/",
+        apiUrl = BACKEND_URL,
+        loginUrl = FRAMER_LOGIN_URL,
         enforceRedirect = true,
         showLogoutBar = true,
         accentColor = "#2BD8C8",
@@ -93,9 +96,7 @@ export default function FramerAuthGuard(props: {
                     window.localStorage.setItem("user_name", data.user.name)
                     if (onAuthenticated) onAuthenticated(data.user)
                 } else {
-                    window.localStorage.removeItem("access_token")
-                    window.localStorage.removeItem("user_email")
-                    window.localStorage.removeItem("user_name")
+                    window.localStorage.clear()
                     setStatus("unauthenticated")
                     redirectToLogin()
                 }
@@ -107,10 +108,7 @@ export default function FramerAuthGuard(props: {
 
     const handleLogout = () => {
         if (typeof window !== "undefined") {
-            window.localStorage.removeItem("access_token")
-            window.localStorage.removeItem("user_email")
-            window.localStorage.removeItem("user_name")
-            window.localStorage.removeItem("user_picture")
+            window.localStorage.clear()
             window.location.href = loginUrl
         }
     }
@@ -198,12 +196,12 @@ addPropertyControls(FramerAuthGuard, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        defaultValue: BACKEND_URL,
     },
     loginUrl: {
         type: ControlType.String,
         title: "Framer Login URL",
-        defaultValue: "https://linklenslogin.framer.website/",
+        defaultValue: FRAMER_LOGIN_URL,
     },
     enforceRedirect: {
         type: ControlType.Boolean,

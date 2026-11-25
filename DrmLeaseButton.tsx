@@ -31,7 +31,7 @@ export default function DrmLeaseButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        apiUrl = "https://optimal-symptoms-letters-modem.trycloudflare.com",
         leaseSeconds = 30,
         buttonLabel = "Reset / Renew Lease",
         autoPoll = true,
@@ -259,7 +259,7 @@ addPropertyControls(DrmLeaseButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        defaultValue: "https://optimal-symptoms-letters-modem.trycloudflare.com",
     },
     leaseSeconds: {
         type: ControlType.Number,

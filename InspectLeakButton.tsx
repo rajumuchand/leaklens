@@ -31,7 +31,7 @@ export default function InspectLeakButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        apiUrl = "https://optimal-symptoms-letters-modem.trycloudflare.com",
         buttonLabel = "Run Forensic Leak Analysis",
         pastedSnippet: initialSnippet = "",
         showTextarea = true,
@@ -392,7 +392,7 @@ addPropertyControls(InspectLeakButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://civilian-endorsement-invalid-items.trycloudflare.com",
+        defaultValue: "https://optimal-symptoms-letters-modem.trycloudflare.com",
         description: "Your ngrok or Cloudflare tunnel URL (no trailing slash).",
     },
     buttonLabel: {
