@@ -1,0 +1,3867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LeakLens · SentinelTrace Forensic & Offline DRM Engine</title>
+    <meta name="description" content="Trace leaked copies and enforce offline document access with redundant zero-width steganography, HMAC-SHA256 attribution, and anti-clock-tampering RAM leases." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Onest:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://accounts.google.com/gsi/client" async defer onload="typeof initGoogleIdentity === 'function' && initGoogleIdentity()"></script>
+    <style>
+        :root {
+            --bg-void: #000000;
+            --surface-glass: rgba(6, 6, 10, 0.72);
+            --surface-glass-strong: rgba(8, 8, 14, 0.88);
+            --surface-card: rgba(5, 5, 9, 0.70);
+            --surface-input: rgba(10, 10, 16, 0.85);
+            --border-subtle: rgba(243, 242, 248, 0.12);
+            --border-hover: rgba(243, 242, 248, 0.28);
+            --text-primary: #F3F2F8;
+            --text-secondary: rgba(243, 242, 248, 0.76);
+            --text-muted: rgba(243, 242, 248, 0.50);
+            --gold: #FFB627;
+            --violet: #7B5CFA;
+            --violet-soft: #9A82FF;
+            --teal: #2BD8C8;
+            --danger: #FF3B5C;
+            --font-display: 'Onest', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            background: var(--bg-void);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            -webkit-font-smoothing: antialiased;
+            color-scheme: dark;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg-void);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            line-height: 1.5;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        button, input, textarea {
+            font-family: inherit;
+        }
+
+        /* ==============================================================
+           FIXED WEBGL MINDFIELD 3D PARTICLE BRAIN CANVAS
+           ============================================================== */
+        #mindFieldWrap {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            background: radial-gradient(circle at 72% 45%, rgba(123, 92, 250, 0.08), transparent 55%),
+                        radial-gradient(circle at 25% 80%, rgba(43, 216, 200, 0.05), transparent 50%);
+        }
+
+        #mindFieldCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .page-layer {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+        }
+
+        /* ==============================================================
+           FLOATING STICKY NAVIGATION (LEAKLENS.FRAMER.AI STYLE)
+           ============================================================== */
+        .nav-shell {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 40;
+            height: 84px;
+            display: flex;
+            align-items: center;
+            transition: background 0.4s ease, backdrop-filter 0.4s ease, height 0.4s ease, border-color 0.4s ease;
+            border-bottom: 1px solid transparent;
+        }
+
+        .nav-shell.scrolled {
+            height: 68px;
+            background: rgba(0, 0, 0, 0.68);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom-color: var(--border-subtle);
+        }
+
+        .nav-wrap {
+            width: 100%;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 0 100px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        .nav-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 11px;
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 500;
+            letter-spacing: -0.03em;
+            color: var(--text-primary);
+            white-space: nowrap;
+        }
+
+        .nav-brand svg {
+            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+            flex-shrink: 0;
+        }
+
+        .nav-brand:hover svg {
+            transform: rotate(120deg);
+        }
+
+        .nav-status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(43, 216, 200, 0.08);
+            border: 1px solid rgba(43, 216, 200, 0.25);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--teal);
+            margin-left: 6px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--teal);
+            box-shadow: 0 0 10px var(--teal);
+            animation: mfPulse 2.4s ease-in-out infinite;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+        }
+
+        .nav-link {
+            position: relative;
+            font-family: var(--font-display);
+            font-size: 13px;
+            font-weight: 400;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            padding: 6px 0;
+            transition: color 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .nav-link::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 1px;
+            background: var(--gold);
+            transform: scaleX(0);
+            transform-origin: right;
+            transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+        }
+
+        .nav-link:hover {
+            color: var(--text-primary);
+        }
+
+        .nav-link:hover::after {
+            transform: scaleX(1);
+            transform-origin: left;
+        }
+
+        .lt-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            height: 42px;
+            padding: 0 22px;
+            border-radius: 999px;
+            background: var(--violet);
+            color: #FFFFFF;
+            font-family: var(--font-display);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            cursor: pointer;
+            transition: filter 0.3s ease, box-shadow 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            white-space: nowrap;
+        }
+
+        .lt-pill:hover {
+            filter: brightness(1.16);
+            box-shadow: 0 0 34px 2px rgba(123, 92, 250, 0.55);
+            transform: translateY(-2px);
+        }
+
+        .lt-pill.secondary {
+            background: rgba(243, 242, 248, 0.06);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+            backdrop-filter: blur(12px);
+        }
+
+        .lt-pill.secondary:hover {
+            border-color: var(--gold);
+            box-shadow: 0 0 28px rgba(255, 182, 39, 0.24);
+        }
+
+        .lt-pill.teal {
+            background: rgba(43, 216, 200, 0.14);
+            color: var(--teal);
+            border: 1px solid rgba(43, 216, 200, 0.36);
+        }
+
+        .lt-pill.gold {
+            background: var(--gold);
+            color: #08080C;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+        }
+
+        .lt-pill.danger {
+            background: rgba(255, 59, 92, 0.16);
+            color: #FF6B84;
+            border: 1px solid rgba(255, 59, 92, 0.45);
+        }
+
+        .lt-pill.sm {
+            height: 34px;
+            padding: 0 15px;
+            font-size: 11.5px;
+        }
+
+        /* ==============================================================
+           COMMON WRAPPER & TYPOGRAPHY SYSTEM (ONEST + INTER)
+           ============================================================== */
+        .section-wrap {
+            width: 100%;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 0 100px;
+            position: relative;
+        }
+
+        .kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--font-display);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--gold);
+        }
+
+        .kicker.violet { color: var(--violet-soft); }
+        .kicker.teal { color: var(--teal); }
+
+        .glyph-spin {
+            animation: mfSpin 16s linear infinite;
+        }
+        @keyframes mfSpin { to { transform: rotate(360deg); } }
+
+        h1.display-hero {
+            font-family: var(--font-display);
+            font-size: clamp(54px, 6.4vw, 92px);
+            font-weight: 500;
+            line-height: 0.98;
+            letter-spacing: -0.052em;
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        h2.display-section {
+            font-family: var(--font-display);
+            font-size: clamp(34px, 3.8vw, 56px);
+            font-weight: 500;
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        h2.display-xl {
+            font-family: var(--font-display);
+            font-size: clamp(52px, 7.2vw, 112px);
+            font-weight: 500;
+            line-height: 0.98;
+            letter-spacing: -0.052em;
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        .lead-copy {
+            font-size: 18px;
+            line-height: 1.55;
+            color: rgba(243, 242, 248, 0.82);
+            margin: 0;
+        }
+
+        .muted-copy {
+            font-size: 15px;
+            line-height: 1.6;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        /* ==============================================================
+           MOTION CLASSES FROM MINDFIELD (.mf-rv, .mf-lit, .mf-tl, .mf-lift)
+           ============================================================== */
+        .mf-rv, .mf-hero-anim {
+            transition: opacity 0.9s cubic-bezier(0.2, 0.7, 0.2, 1),
+                        transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1),
+                        filter 0.9s ease;
+        }
+
+        .mf-rv:not(.in) {
+            opacity: 0;
+            transform: translateY(26px);
+            filter: blur(6px);
+        }
+
+        .mf-hero-anim:not(.in) {
+            opacity: 0;
+            transform: translateY(36px);
+            filter: blur(8px);
+        }
+
+        .mf-rv.in, .mf-hero-anim.in {
+            opacity: 1;
+            transform: translateY(0);
+            filter: blur(0);
+        }
+
+        .mf-lift {
+            transition: border-color 0.4s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.5s ease;
+        }
+
+        .mf-lift:hover {
+            transform: translateY(-6px);
+            border-color: rgba(255, 182, 39, 0.52) !important;
+            box-shadow: 0 30px 80px -30px rgba(123, 92, 250, 0.45);
+        }
+
+        .mf-drop {
+            width: 1px;
+            height: 36px;
+            background: linear-gradient(to bottom, var(--gold), var(--violet), transparent);
+            transform-origin: top;
+            animation: mfDrop 2.2s ease-in-out infinite;
+        }
+
+        @keyframes mfDrop {
+            0% { transform: scaleY(0); opacity: 0.9; }
+            45% { transform: scaleY(1); opacity: 1; }
+            100% { transform: scaleY(1); opacity: 0; }
+        }
+
+        @keyframes mfPulse {
+            0%, 100% { opacity: 0.55; }
+            50% { opacity: 1; }
+        }
+
+        .mf-stat {
+            font-family: var(--font-display);
+            font-size: clamp(42px, 4.5vw, 66px);
+            font-weight: 500;
+            letter-spacing: -0.04em;
+            line-height: 1;
+            color: var(--text-primary);
+            text-shadow: 0 0 28px rgba(255, 182, 39, 0.35);
+        }
+
+        .mf-lit .w {
+            transition: color 0.5s ease, text-shadow 0.6s ease;
+            color: rgba(243, 242, 248, 0.24);
+        }
+
+        .mf-lit .w.on {
+            color: var(--text-primary);
+            text-shadow: 0 0 24px rgba(255, 255, 255, 0.18);
+        }
+
+        /* ==============================================================
+           HERO SECTION (RIGHT 3D BRAIN + ASYMMETRIC LEFT EDITORIAL)
+           ============================================================== */
+        .hero-section {
+            min-height: 100vh;
+            min-height: 700px;
+            padding: 128px 0 84px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+
+        .hero-content {
+            max-width: 520px;
+            width: 44%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .scroll-hint {
+            position: absolute;
+            left: 100px;
+            bottom: 30px;
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .scroll-hint span {
+            font-family: var(--font-display);
+            font-size: 12px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+
+        /* ==============================================================
+           STICKY FROSTED NOTE SECTION
+           ============================================================== */
+        .note-section {
+            min-height: 82vh;
+            padding: 90px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .note-align {
+            width: 100%;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .mf-note {
+            width: 100%;
+            max-width: 620px;
+            padding: 36px;
+            border-radius: 22px;
+            background: var(--surface-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* ==============================================================
+           INTERACTIVE CONSOLE SECTION (4 SENTINELTRACE TABS)
+           ============================================================== */
+        .console-section {
+            padding: 72px 0 110px;
+        }
+
+        .console-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 28px;
+            margin-bottom: 36px;
+        }
+
+        .console-shell {
+            background: var(--surface-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 32px 90px -24px rgba(0, 0, 0, 0.85), 0 0 80px -40px rgba(123, 92, 250, 0.28);
+        }
+
+        .tab-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 16px 24px;
+            background: rgba(12, 12, 18, 0.78);
+            border-bottom: 1px solid var(--border-subtle);
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .tab-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .tab-btn {
+            padding: 10px 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(243, 242, 248, 0.10);
+            background: rgba(243, 242, 248, 0.03);
+            color: var(--text-secondary);
+            font-family: var(--font-display);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .tab-btn:hover {
+            border-color: rgba(154, 130, 255, 0.45);
+            color: var(--text-primary);
+            background: rgba(123, 92, 250, 0.12);
+        }
+
+        .tab-btn.active {
+            background: var(--violet);
+            color: #FFFFFF;
+            border-color: rgba(255, 255, 255, 0.22);
+            box-shadow: 0 0 24px rgba(123, 92, 250, 0.45);
+        }
+
+        .tab-panel {
+            display: none;
+            padding: 32px;
+        }
+
+        .tab-panel.active {
+            display: block;
+            animation: panelFade 0.35s ease;
+        }
+
+        @keyframes panelFade {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .console-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+
+        .glass-subcard {
+            background: rgba(10, 10, 16, 0.72);
+            border: 1px solid var(--border-subtle);
+            border-radius: 18px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .field-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .field-label {
+            font-family: var(--font-display);
+            font-size: 11.5px;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .glass-input, .glass-textarea {
+            width: 100%;
+            background: rgba(4, 4, 8, 0.85);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            color: var(--text-primary);
+            padding: 12px 14px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.5;
+            outline: none;
+            transition: border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .glass-input:focus, .glass-textarea:focus {
+            border-color: var(--violet-soft);
+            box-shadow: 0 0 0 3px rgba(123, 92, 250, 0.16);
+        }
+
+        .glass-textarea {
+            min-height: 145px;
+            resize: vertical;
+        }
+
+        /* PDF Drop Zone */
+        .pdf-drop-zone {
+            border: 1.5px dashed rgba(154, 130, 255, 0.35);
+            background: rgba(123, 92, 250, 0.05);
+            border-radius: 14px;
+            padding: 16px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .pdf-drop-zone:hover, .pdf-drop-zone.dragover {
+            border-color: var(--gold);
+            background: rgba(255, 182, 39, 0.08);
+        }
+
+        .btn-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        /* Status & Result Badges */
+        .mono-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 500;
+            background: rgba(243, 242, 248, 0.06);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+
+        .mono-badge.teal {
+            background: rgba(43, 216, 200, 0.12);
+            border-color: rgba(43, 216, 200, 0.35);
+            color: var(--teal);
+        }
+
+        .mono-badge.gold {
+            background: rgba(255, 182, 39, 0.12);
+            border-color: rgba(255, 182, 39, 0.35);
+            color: var(--gold);
+        }
+
+        .mono-badge.violet {
+            background: rgba(123, 92, 250, 0.14);
+            border-color: rgba(123, 92, 250, 0.40);
+            color: #C4B5FD;
+        }
+
+        .mono-badge.danger {
+            background: rgba(255, 59, 92, 0.14);
+            border-color: rgba(255, 59, 92, 0.45);
+            color: #FF8DA1;
+        }
+
+        .metric-kv-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .metric-kv {
+            background: rgba(243, 242, 248, 0.03);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 12px 14px;
+        }
+
+        .metric-kv .k {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .metric-kv .v {
+            font-family: var(--font-mono);
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--text-primary);
+            word-break: break-all;
+        }
+
+        .banner-alert {
+            border-radius: 12px;
+            padding: 13px 16px;
+            font-size: 13px;
+            line-height: 1.5;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid rgba(43, 216, 200, 0.35);
+            background: rgba(43, 216, 200, 0.08);
+            color: var(--teal);
+        }
+
+        .banner-alert.danger {
+            border-color: rgba(255, 59, 92, 0.45);
+            background: rgba(255, 59, 92, 0.10);
+            color: #FF8DA1;
+        }
+
+        .webhook-inline {
+            display: none;
+            margin-top: 4px;
+            padding: 12px 15px;
+            border-radius: 12px;
+            background: rgba(255, 59, 92, 0.12);
+            border: 1px solid rgba(255, 59, 92, 0.50);
+            color: #FFC4CE;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .webhook-inline.visible {
+            display: block;
+            animation: panelFade 0.25s ease;
+        }
+
+        /* ==============================================================
+           TAB 3: ENTERPRISE OFFLINE DRM VIEWPORT & TELEMETRY
+           ============================================================== */
+        .drm-countdown-card {
+            background: rgba(4, 4, 8, 0.90);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .drm-countdown-card.allowed {
+            border-color: rgba(43, 216, 200, 0.42);
+            box-shadow: 0 0 36px -14px rgba(43, 216, 200, 0.35);
+        }
+
+        .drm-countdown-card.revoked {
+            border-color: rgba(255, 59, 92, 0.55);
+            box-shadow: 0 0 36px -14px rgba(255, 59, 92, 0.45);
+        }
+
+        .timer-digits {
+            font-family: var(--font-mono);
+            font-size: 40px;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: rgba(243, 242, 248, 0.08);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, var(--gold), var(--violet), var(--teal));
+            transition: width 0.45s linear;
+        }
+
+        .drm-viewport-box {
+            position: relative;
+            min-height: 310px;
+            border-radius: 16px;
+            background: rgba(3, 3, 6, 0.94);
+            border: 1px solid var(--border-subtle);
+            padding: 24px;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            -moz-user-select: none;
+        }
+
+        .viewport-watermark-grid {
+            position: absolute;
+            inset: -40%;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 42px;
+            transform: rotate(-20deg);
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            opacity: 0.15;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--gold);
+            z-index: 3;
+            white-space: nowrap;
+        }
+
+        .viewport-doc-text {
+            position: relative;
+            z-index: 2;
+            font-family: var(--font-body);
+            font-size: 14px;
+            line-height: 1.7;
+            color: rgba(243, 242, 248, 0.88);
+            white-space: pre-wrap;
+        }
+
+        .viewport-locked-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            background: rgba(4, 4, 8, 0.92);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+            gap: 10px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .viewport-locked-overlay.locked {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .qr-renewal-box {
+            display: none;
+            padding: 16px;
+            border-radius: 14px;
+            background: rgba(123, 92, 250, 0.08);
+            border: 1px solid rgba(154, 130, 255, 0.32);
+            align-items: center;
+            gap: 16px;
+        }
+
+        .qr-renewal-box.visible {
+            display: flex;
+        }
+
+        /* ==============================================================
+           TAB 4: JUDGE STRESS TEST
+           ============================================================== */
+        .compare-card {
+            background: rgba(6, 6, 10, 0.78);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 18px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .compare-card.selected {
+            border-color: var(--gold);
+            box-shadow: 0 0 28px -8px rgba(255, 182, 39, 0.4);
+        }
+
+        .compare-preview {
+            font-size: 13px;
+            line-height: 1.55;
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.45);
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 10px;
+            max-height: 115px;
+            overflow-y: auto;
+        }
+
+        /* ==============================================================
+           STATEMENT SECTION (.mf-lit WORD REVEAL)
+           ============================================================== */
+        .statement-section {
+            min-height: 92vh;
+            padding: 110px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .statement-stack {
+            max-width: 1040px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            text-align: center;
+        }
+
+        .statement-line {
+            font-family: var(--font-display);
+            font-size: clamp(28px, 3.6vw, 48px);
+            font-weight: 500;
+            line-height: 1.2;
+            letter-spacing: -0.03em;
+            margin: 0;
+        }
+
+        /* ==============================================================
+           HOW IT WORKS (MIND DIAGRAM + 3 LESSONS)
+           ============================================================== */
+        .how-section {
+            padding: 120px 0 110px;
+        }
+
+        .section-split-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 48px;
+            margin-bottom: 54px;
+            flex-wrap: wrap;
+        }
+
+        .diagram-panel {
+            background: var(--surface-glass);
+            backdrop-filter: blur(18px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 22px;
+            padding: 36px;
+        }
+
+        .lessons-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px;
+            margin-top: 22px;
+        }
+
+        .lesson-card {
+            background: rgba(6, 6, 10, 0.65);
+            border: 1px solid var(--border-subtle);
+            border-radius: 18px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .lesson-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--font-display);
+            font-size: 17px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        /* SVG MindDiagram animations */
+        .ag-n { transition: filter 0.4s ease; }
+        .ag-n:hover { filter: brightness(1.3); }
+        .ag-gl { animation: agPulse 3.2s ease-in-out infinite; }
+        @keyframes agPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+        .ag-bar { animation: agBar 2.6s cubic-bezier(0.6, 0, 0.3, 1) infinite; }
+        @keyframes agBar { 0% { transform: scaleX(0); } 70% { transform: scaleX(1); } 100% { transform: scaleX(1); opacity: 0.25; } }
+        .ag-ck { animation: agCk 4s ease-in-out infinite; }
+        @keyframes agCk { 0%, 30% { opacity: 0.45; } 45%, 90% { opacity: 1; } 100% { opacity: 0.45; } }
+
+        /* ==============================================================
+           STATS + INTERACTIVE TIMELINE (.mf-tl + .mf-ex)
+           ============================================================== */
+        .specs-section {
+            padding: 110px 0;
+        }
+
+        .specs-row {
+            display: grid;
+            grid-template-columns: 5fr 7fr;
+            gap: 72px;
+            align-items: start;
+        }
+
+        .stats-list {
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+            margin-top: 40px;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: baseline;
+            gap: 20px;
+        }
+
+        .mf-tl {
+            position: relative;
+            padding-left: 52px;
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+        }
+
+        .mf-tl::before {
+            content: "";
+            position: absolute;
+            left: 17px;
+            top: 10px;
+            bottom: 10px;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
+        .mf-tl::after {
+            content: "";
+            position: absolute;
+            left: 17px;
+            top: 10px;
+            width: 2px;
+            height: calc((100% - 20px) * var(--p, 0.4));
+            max-height: calc(100% - 20px);
+            background: linear-gradient(var(--gold), var(--violet-soft), var(--teal));
+            border-radius: 2px;
+            box-shadow: 0 0 14px rgba(255, 182, 39, 0.55);
+        }
+
+        .mf-ex {
+            position: relative;
+            background: var(--surface-glass);
+            border: 1px solid var(--border-subtle);
+            border-radius: 18px;
+            padding: 22px 24px;
+            transition: border-color 0.35s ease;
+        }
+
+        .mf-ex.op, .mf-ex:hover {
+            border-color: rgba(255, 182, 39, 0.45);
+        }
+
+        .mf-dot {
+            position: absolute;
+            left: -42px;
+            top: 24px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #09090E;
+            border: 2px solid var(--violet-soft);
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .mf-ex.op .mf-dot, .mf-ex:hover .mf-dot {
+            border-color: var(--gold);
+            box-shadow: 0 0 0 6px rgba(255, 182, 39, 0.12), 0 0 26px rgba(255, 182, 39, 0.55);
+            transform: scale(1.1);
+        }
+
+        .mf-tg {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            padding: 0;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            gap: 16px;
+        }
+
+        .mf-tg-icon {
+            font-size: 20px;
+            color: var(--gold);
+            transition: transform 0.35s ease;
+            line-height: 1;
+        }
+
+        .mf-ex.op .mf-tg-icon {
+            transform: rotate(45deg);
+        }
+
+        .mf-exd {
+            display: none;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.65;
+        }
+
+        .mf-ex.op .mf-exd {
+            display: block;
+            animation: panelFade 0.35s ease;
+        }
+
+        /* ==============================================================
+           MIND ORB CAPABILITY CARDS GRID
+           ============================================================== */
+        .capabilities-section {
+            padding: 100px 0;
+        }
+
+        .orb-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .orb-card {
+            background: var(--surface-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 24px;
+            padding: 28px;
+            min-height: 410px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+
+        .orb-stage {
+            height: 150px;
+            width: 100%;
+            position: relative;
+            margin-bottom: 18px;
+        }
+
+        .orb-spin {
+            transform-box: fill-box;
+            transform-origin: center;
+            animation: mfSpin 40s linear infinite;
+        }
+
+        .orb-card:hover .orb-spin {
+            animation-duration: 9s;
+        }
+
+        /* ==============================================================
+           PRINCIPLES + CONTACT REFORM + FOOTER
+           ============================================================== */
+        .principles-section {
+            padding: 90px 0;
+            text-align: center;
+        }
+
+        .principles-list {
+            display: flex;
+            flex-direction: column;
+            gap: 26px;
+            max-width: 720px;
+            margin: 34px auto 0;
+        }
+
+        .principle-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            font-family: var(--font-display);
+            font-size: clamp(20px, 2.2vw, 26px);
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        .contact-section {
+            min-height: 68vh;
+            padding: 100px 0 70px;
+            display: flex;
+            align-items: center;
+        }
+
+        .site-footer {
+            width: 100%;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 34px 100px 44px;
+            border-top: 1px solid var(--border-subtle);
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 26px;
+        }
+
+        .footer-links a:hover {
+            color: var(--gold);
+        }
+
+        /* ==============================================================
+           GLOBAL REAL-TIME WEBHOOK TOAST
+           ============================================================== */
+        #webhookToast {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            z-index: 90;
+            max-width: 440px;
+            background: rgba(16, 8, 12, 0.94);
+            backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 59, 92, 0.65);
+            border-radius: 16px;
+            padding: 16px 18px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 36px rgba(255, 59, 92, 0.35);
+            transform: translateY(130%);
+            opacity: 0;
+            transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease;
+        }
+
+        #webhookToast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* ==============================================================
+           ROOT AUTH GATE & LOGIN SCREEN OVERLAY
+           ============================================================== */
+        #loadingScreen {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.72);
+            backdrop-filter: blur(12px);
+        }
+
+        #loginScreen {
+            position: relative;
+            z-index: 20;
+            min-height: 100vh;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 28px 20px;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 470px;
+            background: rgba(6, 6, 10, 0.80);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+            border: 1px solid rgba(243, 242, 248, 0.14);
+            border-radius: 24px;
+            padding: 40px 34px 34px;
+            text-align: center;
+            box-shadow: 0 36px 100px -24px rgba(0, 0, 0, 0.92), 0 0 70px -32px rgba(123, 92, 250, 0.35);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .auth-mode-tabs {
+            display: inline-flex;
+            padding: 4px;
+            border-radius: 999px;
+            background: rgba(243, 242, 248, 0.05);
+            border: 1px solid var(--border-subtle);
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .auth-mode-tab {
+            padding: 7px 18px;
+            border-radius: 999px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: var(--font-display);
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .auth-mode-tab.active {
+            background: var(--violet);
+            color: #FFFFFF;
+            box-shadow: 0 0 18px rgba(123, 92, 250, 0.4);
+        }
+
+        /* ==============================================================
+           RESPONSIVE BREAKPOINTS (MATCHING LEAKLENS.FRAMER.AI)
+           ============================================================== */
+        @media (max-width: 1199.98px) {
+            .nav-wrap, .section-wrap, .site-footer { padding-left: 40px; padding-right: 40px; }
+            .scroll-hint { left: 40px; }
+            .hero-content { width: 100%; max-width: 620px; }
+            .hero-section { justify-content: flex-start; padding-top: 112px; }
+            .note-align { justify-content: flex-start; }
+            .console-grid-2, .lessons-grid, .orb-grid, .specs-row { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 809.98px) {
+            .nav-wrap, .section-wrap, .site-footer { padding-left: 20px; padding-right: 20px; }
+            .scroll-hint { display: none; }
+            .nav-links { display: none; }
+            .tab-panel { padding: 20px; }
+            .field-row, .metric-kv-grid { grid-template-columns: 1fr; }
+            .diagram-panel { padding: 20px; }
+            .principle-item { justify-content: flex-start; text-align: left; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .mf-rv, .mf-hero-anim, .mf-drop, .orb-spin, .ag-gl, .ag-bar, .ag-ck {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Fixed Full-Screen WebGL 3D MindField Particle Brain Background -->
+    <div id="mindFieldWrap" aria-hidden="true">
+        <canvas id="mindFieldCanvas"></canvas>
+    </div>
+
+    <!-- Root Session Check Loader -->
+    <div id="loadingScreen">
+        <div class="mono-badge violet" style="padding: 10px 18px; font-size: 12px;">
+            <span class="status-dot"></span>
+            <span>VERIFYING LINKLENS SESSION...</span>
+        </div>
+    </div>
+
+    <!-- PAGE 1: LOGIN & REGISTER VIEW (Shown when Unauthenticated) -->
+    <section id="loginScreen" aria-label="Authentication Portal">
+        <div class="login-card">
+            <div style="display:inline-flex; align-items:center; gap:10px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="mflogin" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#FFB627" />
+                            <stop offset="0.55" stop-color="#9A82FF" />
+                            <stop offset="1" stop-color="#2BD8C8" />
+                        </linearGradient>
+                    </defs>
+                    <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" fill="url(#mflogin)" opacity="0.95" />
+                    <path d="M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#000" stroke-opacity="0.55" stroke-width="1.3" />
+                </svg>
+                <span style="font-family:var(--font-display); font-size:22px; font-weight:500; letter-spacing:-0.03em;">LeakLens</span>
+            </div>
+
+            <div class="kicker" style="font-size:11.5px;">SentinelTrace Cryptographic Security Portal</div>
+
+            <h1 style="font-family:var(--font-display); font-size:34px; font-weight:500; letter-spacing:-0.04em; margin:4px 0 0; line-height:1.1;">
+                Welcome to LeakLens
+            </h1>
+
+            <div class="auth-mode-tabs">
+                <button type="button" id="modeSignInBtn" class="auth-mode-tab active" onclick="switchLoginMode('signin')">Sign In</button>
+                <button type="button" id="modeRegisterBtn" class="auth-mode-tab" onclick="switchLoginMode('register')">Register</button>
+            </div>
+
+            <p id="loginSubtitle" class="muted-copy" style="font-size:14px; max-width:360px;">
+                Sign in with your Google account to unlock invisible watermarking, forensic leak inspection, and offline RAM DRM controls.
+            </p>
+
+            <div id="google-login-btn" style="margin: 8px 0 4px; min-height: 44px; display:flex; align-items:center; justify-content:center;"></div>
+
+            <div id="loginErrorMsg" style="display:none; font-family:var(--font-mono); font-size:12px; color:#FF8DA1; background:rgba(255,59,92,0.12); border:1px solid rgba(255,59,92,0.4); border-radius:12px; padding:10px 14px; width:100%;"></div>
+
+            <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:6px;">
+                <span class="mono-badge gold">Zero-Width Stego</span>
+                <span class="mono-badge violet">HMAC-SHA256</span>
+                <span class="mono-badge teal">RS256 RAM Leases</span>
+            </div>
+
+            <div style="font-size:11.5px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:14px; width:100%;">
+                Verified Gmail email auto-binds to generated forensic watermarks.
+            </div>
+        </div>
+    </section>
+
+    <!-- Real-Time Critical Webhook Toast -->
+    <div id="webhookToast" role="alert" aria-live="assertive">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:600; color:#FF5C77; letter-spacing:0.06em;">
+                WEBHOOK INCIDENT DISPATCHED
+            </span>
+            <button onclick="dismissWebhookToast()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:15px;">✕</button>
+        </div>
+        <div id="webhookToastBody" style="font-family:var(--font-mono); font-size:12.5px; color:#FFE4E9; line-height:1.45;"></div>
+    </div>
+
+    <!-- Floating Navigation Bar (Shown after Auth) -->
+    <header class="nav-shell" id="topNav" style="display:none;">
+        <div class="nav-wrap">
+            <a href="#top" class="nav-brand">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="mfnavg" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#FFB627" />
+                            <stop offset="0.55" stop-color="#9A82FF" />
+                            <stop offset="1" stop-color="#2BD8C8" />
+                        </linearGradient>
+                    </defs>
+                    <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" fill="url(#mfnavg)" opacity="0.92" />
+                    <path d="M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#000" stroke-opacity="0.55" stroke-width="1.3" />
+                </svg>
+                <span>LeakLens</span>
+                <span class="nav-status-pill" id="apiHealthBadge">
+                    <span class="status-dot"></span>
+                    <span>ENGINE v3.0</span>
+                </span>
+            </a>
+
+            <nav class="nav-links" aria-label="Main">
+                <a class="nav-link" href="#engine">Console</a>
+                <a class="nav-link" href="#pipeline">Architecture</a>
+                <a class="nav-link" href="#specs">Specs</a>
+                <a class="nav-link" href="#capabilities">Modalities</a>
+                <a class="nav-link" href="https://leaklens.framer.ai/" target="_blank" rel="noopener">leaklens.framer.ai ↗</a>
+                <span id="navUserEmail" class="mono-badge teal" style="display:none;"></span>
+                <button type="button" class="lt-pill sm danger" onclick="handleLogout()" style="height:36px;">Logout</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- PAGE 2: MAIN LINKLENS / SENTINELTRACE WEBSITE (Shown after Auth) -->
+    <div class="page-layer" id="mainWebsiteView" style="display:none;">
+        <!-- SECTION 1: HERO (CUE: HERO -> 3D PARTICLE BRAIN ON RIGHT) -->
+        <section id="top" class="hero-section" data-mf-cue="hero" data-mf-tint="#FFB627" data-mf-quiet="0">
+            <div class="section-wrap">
+                <div class="hero-content">
+                    <h1 class="display-hero mf-hero-anim">
+                        Trace.<br />Verify.<br />Enforce.
+                    </h1>
+                    <p class="kicker mf-rv" style="transition-delay:0.08s">
+                        Problem Statement 09 · SentinelTrace Forensic &amp; Offline DRM
+                    </p>
+                    <p class="lead-copy mf-rv" style="transition-delay:0.16s">
+                        When 50 employees open the same confidential file, traditional encryption leaves no fingerprint and offline devices ignore server revocation.
+                        <strong>LeakLens</strong> embeds invisible zero-width cryptographic watermarks per sentence and locks offline viewing inside anti-clock-tamper RAM leases.
+                    </p>
+                    <div class="hero-actions mf-rv" style="transition-delay:0.24s">
+                        <a href="#engine" class="lt-pill" onclick="switchTabById('watermark')">
+                            <span>Open Live Console</span>
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8h9.5M8.5 3.5 13 8l-4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </a>
+                        <a href="#engine" class="lt-pill secondary" onclick="switchTabById('stress')">
+                            Try Judge Stress Test
+                        </a>
+                        <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener" class="nav-link" style="margin-left:6px; font-size:12px;">
+                            leaklens.framer.ai ↗
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="scroll-hint">
+                <div class="mf-drop"></div>
+                <span>Scroll</span>
+            </div>
+        </section>
+
+        <!-- SECTION 2: FROSTED GLASS NOTE CARD -->
+        <section class="note-section" data-mf-cue="tint" data-mf-tint="#FFB627" data-mf-quiet="1">
+            <div class="section-wrap">
+                <div class="note-align">
+                    <div class="mf-note mf-rv">
+                        <div class="kicker">
+                            <svg class="glyph-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#FFB627" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Cryptographic Thesis</span>
+                        </div>
+                        <h2 class="display-section" style="font-size: clamp(28px, 3vw, 42px);">
+                            I look for where security breaks offline.
+                        </h2>
+                        <p class="lead-copy" style="font-size:16px; color: var(--text-secondary);">
+                            Deleting paragraphs defeats single-header watermarks. Rewinding an OS system clock defeats naive expiry timestamps.
+                            SentinelTrace embeds redundant HMAC-SHA256 steganographic sequences at every sentence boundary, overlays invisible vector layers onto unmodified PDFs, and enforces monotonic RAM key shredding.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: INTERACTIVE SENTINELTRACE CONSOLE (ALL 4 TABS) -->
+        <section id="engine" class="console-section" data-mf-cue="tint" data-mf-tint="#7B5CFA" data-mf-quiet="1">
+            <div class="section-wrap">
+                <div class="console-header mf-rv">
+                    <div style="display:flex; flex-direction:column; gap:14px; max-width:650px;">
+                        <div class="kicker violet">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#9A82FF" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Live Interactive Engine</span>
+                        </div>
+                        <h2 class="display-section">Generate. Inspect. Enforce.</h2>
+                    </div>
+                    <p class="muted-copy" style="max-width:440px;">
+                        Connected live to the FastAPI cryptographic engine on localhost:8000 and mirrored at
+                        <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener" style="color:var(--gold); text-decoration:underline;">leaklens.framer.ai</a>.
+                    </p>
+                </div>
+
+                <div class="console-shell mf-rv">
+                    <div class="tab-bar">
+                        <div class="tab-buttons">
+                            <button class="tab-btn active" id="tabBtn-watermark" onclick="switchTab('watermark', this)">01 · Watermark Generator</button>
+                            <button class="tab-btn" id="tabBtn-inspector" onclick="switchTab('inspector', this)">02 · Forensic Inspector</button>
+                            <button class="tab-btn" id="tabBtn-drm" onclick="switchTab('drm', this)">03 · Offline DRM Enforcer</button>
+                            <button class="tab-btn" id="tabBtn-stress" onclick="switchTab('stress', this)">04 · Judge Stress Test</button>
+                        </div>
+                        <span class="mono-badge violet">HMAC-SHA256 + RS256 + AES-GCM</span>
+                    </div>
+
+                    <!-- Google OAuth / Gmail Operator Bar -->
+                    <div id="googleAuthBar" style="padding:12px 24px; border-bottom:1px solid var(--border-subtle); background:rgba(6,6,10,0.56); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                        <div id="authUserSummary" style="display:flex; align-items:center; gap:10px;">
+                            <span class="mono-badge gold" id="authBadge">GUEST SESSION</span>
+                            <span id="authPromptCopy" style="font-size:12.5px; color:var(--text-muted);">Sign in with Google to bind your Gmail operator identity and JWT session.</span>
+                        </div>
+                        <div id="authUserProfile" style="display:none; align-items:center; gap:12px;">
+                            <img id="authAvatar" src="" alt="Profile" style="width:32px; height:32px; border-radius:50%; border:1.5px solid var(--teal); object-fit:cover;" />
+                            <div>
+                                <div id="authName" style="font-size:13px; font-weight:600; color:var(--text-primary); line-height:1.2;"></div>
+                                <div id="authEmail" style="font-family:var(--font-mono); font-size:11px; color:var(--teal);"></div>
+                            </div>
+                            <span class="mono-badge teal">JWT VERIFIED</span>
+                            <button class="lt-pill sm secondary" onclick="useAuthedEmailAsRecipient()">Use as Recipient</button>
+                            <button class="lt-pill sm danger" onclick="handleLogout()">Log out</button>
+                        </div>
+                        <div id="authControlsRight" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <div id="google-signin-btn"></div>
+                            <a href="https://linklenslogin.framer.website/" target="_blank" rel="noopener" class="lt-pill sm secondary">Framer Login ↗</a>
+                            <button id="authGuardToggleBtn" class="lt-pill sm secondary" onclick="toggleAuthGuard()">Route Guard: OFF</button>
+                            <div id="googleClientCfgBox" style="display:none; align-items:center; gap:8px;">
+                                <input id="googleClientIdInput" class="glass-input" type="text" placeholder="Paste Google OAuth Client ID (.apps.googleusercontent.com)" style="padding:6px 10px; font-size:11.5px; width:280px;" />
+                                <button class="lt-pill sm gold" onclick="saveGoogleClientId()">Save Client ID</button>
+                            </div>
+                            <button id="googleClientCfgBtn" class="lt-pill sm secondary" onclick="toggleGoogleClientCfg()">Client ID</button>
+                        </div>
+                    </div>
+
+                    <!-- ==================== TAB 1: WATERMARK GENERATOR ==================== -->
+                    <div id="tab-watermark" class="tab-panel active">
+                        <div class="console-grid-2">
+                            <div class="glass-subcard">
+                                <div class="field-row">
+                                    <div class="field-group">
+                                        <label class="field-label" for="wmRecipient">Recipient ID</label>
+                                        <input id="wmRecipient" class="glass-input" type="text" value="USR-8492 (Alice)" />
+                                    </div>
+                                    <div class="field-group">
+                                        <label class="field-label" for="wmSession">Session ID</label>
+                                        <input id="wmSession" class="glass-input" type="text" value="SESS-2026-Q4" />
+                                    </div>
+                                </div>
+
+                                <div class="field-group">
+                                    <label class="field-label" for="wmText">
+                                        <span>Confidential Document Text</span>
+                                        <span style="color:var(--teal); font-weight:400;">Zero-Width Redundant Injection</span>
+                                    </label>
+                                    <textarea id="wmText" class="glass-textarea">CONFIDENTIAL — PROJECT HYPERION ACQUISITION BRIEF. Target valuation is capped at $420M pending Board approval. Engineering transition will execute across Q3 under strict NDA protocols. Unauthorized external disclosure is strictly prohibited.</textarea>
+                                </div>
+
+                                <div class="pdf-drop-zone" id="pdfDropZone"
+                                     onclick="document.getElementById('wmPdfFileInput').click()"
+                                     ondragover="handlePdfDragOver(event)"
+                                     ondragleave="handlePdfDragLeave(event)"
+                                     ondrop="handlePdfDrop(event)">
+                                    <div>
+                                        <div style="font-size:13px; font-weight:500; color:var(--text-primary);">
+                                            Drag &amp; Drop Original PDF (Preserves Layout or Extracts Text)
+                                        </div>
+                                        <div id="pdfSelectedLabel" style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted); margin-top:3px;">
+                                            No PDF chosen — click to browse
+                                        </div>
+                                    </div>
+                                    <span class="mono-badge gold">.PDF Layer</span>
+                                    <input id="wmPdfFileInput" type="file" accept=".pdf" style="display:none;" onchange="handlePdfFileSelect(event)" />
+                                </div>
+
+                                <div class="btn-row">
+                                    <button class="lt-pill sm" onclick="generateWatermark()">Apply Redundant Watermark</button>
+                                    <button class="lt-pill sm teal" onclick="uploadAndWatermarkPdf()">Upload &amp; Extract PDF</button>
+                                    <button class="lt-pill sm gold" onclick="downloadCopyToCopyPdf()">Download Copy-to-Copy PDF</button>
+                                    <button class="lt-pill sm secondary" onclick="downloadProtectedPdf()">Export Text PDF</button>
+                                </div>
+                            </div>
+
+                            <div class="glass-subcard">
+                                <div class="field-label">
+                                    <span>Watermarked Output Preview</span>
+                                    <span id="wmBadge" class="mono-badge">READY TO SIGN</span>
+                                </div>
+                                <textarea id="wmOutput" class="glass-textarea" readonly placeholder="Generated watermarked text will appear here — visually 100% identical to your source document..."></textarea>
+                                <div id="wmInfo" class="muted-copy" style="font-family:var(--font-mono); font-size:12px;">
+                                    Click "Apply Redundant Watermark" to inject zero-width bits after every sentence.
+                                </div>
+                                <div class="btn-row">
+                                    <button class="lt-pill sm secondary" onclick="copyWatermarkedText()">Copy Watermarked Text</button>
+                                    <button class="lt-pill sm teal" onclick="sendToInspector()">Send to Leak Inspector →</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== TAB 2: FORENSIC INSPECTOR ==================== -->
+                    <div id="tab-inspector" class="tab-panel">
+                        <div class="console-grid-2">
+                            <div class="glass-subcard">
+                                <div class="field-group">
+                                    <label class="field-label" for="inspectInput">
+                                        <span>Suspected Leaked Snippet or Pasted Excerpt</span>
+                                        <span style="color:var(--gold);">Partial 10% Recovery</span>
+                                    </label>
+                                    <textarea id="inspectInput" class="glass-textarea" style="min-height:190px;" placeholder="Paste any leaked email excerpt, Slack snippet, or 1 single sentence copied from a watermarked PDF/text..."></textarea>
+                                </div>
+
+                                <div class="btn-row">
+                                    <button class="lt-pill sm" onclick="runInspector()">Run Forensic Analysis</button>
+                                    <button class="lt-pill sm secondary" onclick="loadSampleSnippet()">Load Full Alice Sample</button>
+                                    <button class="lt-pill sm secondary" onclick="loadPartialSlice()">Slice 1 Sentence</button>
+                                    <button class="lt-pill sm secondary" onclick="loadCleanSnippet()">Clean Text (Negative Test)</button>
+                                </div>
+
+                                <div style="padding-top:10px; border-top:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                                    <input id="pdfUploadInput" type="file" accept=".pdf" style="font-size:12px; color:var(--text-secondary); max-width:240px;" />
+                                    <button class="lt-pill sm teal" onclick="runPdfInspector()">Inspect Uploaded PDF Layers</button>
+                                </div>
+                            </div>
+
+                            <div class="glass-subcard">
+                                <div class="field-label">
+                                    <span>Attribution Readout</span>
+                                    <span id="inspRecoveryBadge" class="mono-badge">STANDBY</span>
+                                </div>
+
+                                <div id="inspectAwaiting" class="muted-copy" style="padding:36px 12px; text-align:center;">
+                                    Paste a leaked snippet on the left or upload a protected PDF to decode its zero-width binary payload and verify HMAC-SHA256 integrity.
+                                </div>
+
+                                <div id="inspectErrorBox" class="banner-alert danger" style="display:none;">
+                                    <span>⚠</span>
+                                    <span id="inspectErrorMsg">No forensic watermark detected.</span>
+                                </div>
+
+                                <div id="inspectResultBox" style="display:none; flex-direction:column; gap:14px;">
+                                    <div id="inspectStatusBanner" class="banner-alert">
+                                        <span>✓</span>
+                                        <span id="inspectBannerText">Forensic match confirmed and cryptographically signed.</span>
+                                    </div>
+                                    <div class="metric-kv-grid">
+                                        <div class="metric-kv">
+                                            <div class="k">Recipient Attribution</div>
+                                            <div class="v" id="resRecipient">—</div>
+                                        </div>
+                                        <div class="metric-kv">
+                                            <div class="k">Session Identifier</div>
+                                            <div class="v" id="resSession">—</div>
+                                        </div>
+                                        <div class="metric-kv">
+                                            <div class="k">HMAC-SHA256 Tag</div>
+                                            <div class="v" id="resSig">—</div>
+                                        </div>
+                                        <div class="metric-kv">
+                                            <div class="k">Redundant Chunks Found</div>
+                                            <div class="v" id="resChunks">—</div>
+                                        </div>
+                                        <div class="metric-kv" style="grid-column: span 2;">
+                                            <div class="k">Cryptographic Verification</div>
+                                            <div class="v" id="resVerified">—</div>
+                                        </div>
+                                    </div>
+                                    <div id="inspectWebhookInline" class="webhook-inline"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== TAB 3: OFFLINE DRM ENFORCER ==================== -->
+                    <div id="tab-drm" class="tab-panel">
+                        <div class="console-grid-2">
+                            <div class="glass-subcard">
+                                <div class="field-label">
+                                    <span>Monotonic Lease &amp; RAM Key Controls</span>
+                                    <span id="pollCounter" class="mono-badge">POLLS: 0</span>
+                                </div>
+
+                                <div id="drmStatusBox" class="drm-countdown-card allowed">
+                                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                                        <div>
+                                            <div style="font-size:11px; letter-spacing:0.06em; color:var(--text-muted); text-transform:uppercase;">
+                                                Remaining Offline Permission Window
+                                            </div>
+                                            <div id="timerDisplay" class="timer-digits">00:00:30</div>
+                                        </div>
+                                        <span id="drmDeviceHwid" class="mono-badge violet">HWID-PENDING</span>
+                                    </div>
+                                    <div class="progress-track">
+                                        <div id="drmProgressBar" class="progress-fill"></div>
+                                    </div>
+                                    <div id="drmStatusMsg" style="font-family:var(--font-mono); font-size:12.5px; color:var(--teal);">
+                                        INITIALIZING RS256 SIGNED LEASE...
+                                    </div>
+                                </div>
+
+                                <div class="field-group">
+                                    <div class="field-label">
+                                        <label for="leaseSlider">Permission Window Slider</label>
+                                        <span id="sliderVal" style="color:var(--gold); font-family:var(--font-mono);">1 min</span>
+                                    </div>
+                                    <input id="leaseSlider" type="range" min="1" max="15" value="1" oninput="updateLeaseDuration(this.value)" style="accent-color:var(--violet);" />
+                                </div>
+
+                                <div class="btn-row">
+                                    <button class="lt-pill sm" onclick="setQuickExpiry(10)">10s Demo Window</button>
+                                    <button class="lt-pill sm secondary" onclick="setQuickExpiry(30)">30s Lease</button>
+                                    <button class="lt-pill sm gold" onclick="simulateClockTamper()">⚠ Rewind Clock (-1 Hr)</button>
+                                    <button class="lt-pill sm danger" onclick="revokeAccessInstantly()">Revoke &amp; Zero RAM</button>
+                                    <button class="lt-pill sm teal" onclick="challengeQrRenewal()">QR Offline Renewal</button>
+                                    <button id="pollToggleBtn" class="lt-pill sm secondary" onclick="togglePolling()">Pause Poll</button>
+                                </div>
+
+                                <div id="qrRenewalBox" class="qr-renewal-box">
+                                    <div id="qrSvgHolder" style="flex-shrink:0; background:#fff; padding:6px; border-radius:8px;"></div>
+                                    <div style="display:flex; flex-direction:column; gap:8px;">
+                                        <div style="font-size:12px; font-weight:600; color:var(--text-primary);">Air-Gapped Supervisor Challenge</div>
+                                        <div id="qrCodeLabel" style="font-family:var(--font-mono); font-size:11.5px; color:var(--gold);">CODE: —</div>
+                                        <button class="lt-pill sm teal" onclick="completeQrRenewal()">Authorize Renewal Token</button>
+                                    </div>
+                                </div>
+
+                                <div class="metric-kv-grid">
+                                    <div class="metric-kv">
+                                        <div class="k">Monotonic Clock Elapsed</div>
+                                        <div class="v" id="resMonoElapsed">0.0s</div>
+                                    </div>
+                                    <div class="metric-kv">
+                                        <div class="k">RS256 JWT + HMAC Lease</div>
+                                        <div class="v" id="resTokenStatus">VERIFYING</div>
+                                    </div>
+                                    <div class="metric-kv">
+                                        <div class="k">Ephemeral RAM Enclave</div>
+                                        <div class="v" id="resShredder">KEY LOADED</div>
+                                    </div>
+                                    <div class="metric-kv">
+                                        <div class="k">AES-256 Key Buffer</div>
+                                        <div class="v" id="drmRamKeyPreview">0x9F...RAM</div>
+                                    </div>
+                                </div>
+                                <div id="resRsaSig" style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted); word-break:break-all;">
+                                    RS256 JWT: initializing...
+                                </div>
+                            </div>
+
+                            <div class="glass-subcard">
+                                <div class="field-label">
+                                    <span>Ephemeral Zero-Disk Decrypted Viewport</span>
+                                    <span id="drmCopyShieldBadge" class="mono-badge gold">🛡 COPY-LOCK · OPACITY 0.15</span>
+                                </div>
+
+                                <div id="drmViewportContainer" class="drm-viewport-box" tabindex="0">
+                                    <div id="viewportWatermarkGrid" class="viewport-watermark-grid" aria-hidden="true"></div>
+                                    <div id="viewportDocText" class="viewport-doc-text">Awaiting signed RAM decryption lease from SentinelTrace...</div>
+                                    <div id="viewportLockedOverlay" class="viewport-locked-overlay">
+                                        <div style="font-size:28px;">🔒</div>
+                                        <div id="viewportLockTitle" style="font-family:var(--font-display); font-size:20px; font-weight:600; color:#FF6B84;">
+                                            ENCRYPTED LOCKDOWN — RAM KEY ZERO-FILLED
+                                        </div>
+                                        <div id="viewportCipherPreview" class="muted-copy" style="max-width:360px; font-size:12px; font-family:var(--font-mono); color:#FFB627;">
+                                            AES-256-GCM memory buffer overwritten with 0x00 bytes. No plaintext cache exists on disk.
+                                        </div>
+                                        <button class="lt-pill sm" onclick="setQuickExpiry(30)">Issue New 30s Lease</button>
+                                    </div>
+                                </div>
+                                <div id="drmShieldLog" class="muted-copy" style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">
+                                    Copy, Cut, Paste, Right-Click, Select, and DevTools shortcuts (F12 / Ctrl+Shift+I / Ctrl+U / Ctrl+C) blocked inside secure reader.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== TAB 4: JUDGE STRESS TEST ==================== -->
+                    <div id="tab-stress" class="tab-panel">
+                        <div style="display:flex; flex-direction:column; gap:20px;">
+                            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
+                                <div>
+                                    <div style="font-family:var(--font-display); font-size:18px; font-weight:500;">Try to Break It — Judge Challenge Sandbox</div>
+                                    <div class="muted-copy" style="font-size:13.5px;">Generate Alice vs. Bob visually identical copies, delete sentences or alter words, then run forensic attribution.</div>
+                                </div>
+                                <button class="lt-pill sm gold" onclick="handleRegenerate()">Regenerate Alice &amp; Bob Copies</button>
+                            </div>
+
+                            <div class="console-grid-2">
+                                <div id="cardAlice" class="compare-card selected" onclick="loadTargetCopy('alice')">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span id="aliceLabel" style="font-family:var(--font-display); font-weight:500; color:var(--gold);">Copy A · Alice Smith (USR-8492)</span>
+                                        <span class="mono-badge gold">CLICK TO LOAD</span>
+                                    </div>
+                                    <div id="aliceCopyPreview" class="compare-preview">Loading Alice copy...</div>
+                                </div>
+                                <div id="cardBob" class="compare-card" onclick="loadTargetCopy('bob')">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span id="bobLabel" style="font-family:var(--font-display); font-weight:500; color:var(--teal);">Copy B · Bob Jones (USR-3104)</span>
+                                        <span class="mono-badge teal">CLICK TO LOAD</span>
+                                    </div>
+                                    <div id="bobCopyPreview" class="compare-preview">Loading Bob copy...</div>
+                                </div>
+                            </div>
+
+                            <div class="console-grid-2">
+                                <div class="glass-subcard">
+                                    <div class="field-label">
+                                        <span>Adversarial Edit Box (Delete / Rewrite Any Text)</span>
+                                        <span style="color:var(--gold);">Tests Redundancy</span>
+                                    </div>
+                                    <textarea id="stressInput" class="glass-textarea" style="min-height:150px;"></textarea>
+                                    <div class="btn-row">
+                                        <button class="lt-pill sm secondary" onclick="stressDeleteSentence()">Delete Sentence</button>
+                                        <button class="lt-pill sm secondary" onclick="stressMutateWords()">Mutate Visible Words</button>
+                                        <button class="lt-pill sm secondary" onclick="stressKeepOneSentence()">Keep Only 1 Sentence</button>
+                                        <button class="lt-pill sm" onclick="runStressTestAnalysis()">Analyze Attacked Text</button>
+                                    </div>
+                                </div>
+
+                                <div class="glass-subcard">
+                                    <div class="field-label">
+                                        <span>Stress Test Verdict</span>
+                                        <span id="stressBadge" class="mono-badge">WAITING FOR ATTACK</span>
+                                    </div>
+
+                                    <div id="stressAwaiting" class="muted-copy" style="padding:28px 12px; text-align:center;">
+                                        Modify the text on the left and click "Analyze Attacked Text" to test zero-width chunk survival.
+                                    </div>
+
+                                    <div id="stressErrorBox" class="banner-alert danger" style="display:none;">
+                                        <span>⚠</span>
+                                        <span id="stressErrorMsg">Watermark broken.</span>
+                                    </div>
+
+                                    <div id="stressResultBox" style="display:none; flex-direction:column; gap:12px;">
+                                        <div id="stressStatusBanner" class="banner-alert">
+                                            <span>✓</span>
+                                            <span id="stressBannerText">Attribution survived attack.</span>
+                                        </div>
+                                        <div class="metric-kv-grid">
+                                            <div class="metric-kv">
+                                                <div class="k">Recovered Recipient</div>
+                                                <div class="v" id="stressRecipient">—</div>
+                                            </div>
+                                            <div class="metric-kv">
+                                                <div class="k">Session ID</div>
+                                                <div class="v" id="stressSession">—</div>
+                                            </div>
+                                            <div class="metric-kv">
+                                                <div class="k">Surviving Chunks</div>
+                                                <div class="v" id="stressChunks">—</div>
+                                            </div>
+                                            <div class="metric-kv">
+                                                <div class="k">HMAC Validity</div>
+                                                <div class="v" id="stressVerified">—</div>
+                                            </div>
+                                        </div>
+                                        <div id="stressWebhookInline" class="webhook-inline"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: EDITORIAL STATEMENT (.mf-lit WORD REVEAL) -->
+        <section class="statement-section" data-mf-cue="tint" data-mf-tint="#FFB627" data-mf-quiet="1">
+            <div class="section-wrap">
+                <div class="statement-stack">
+                    <p class="statement-line mf-lit">
+                        Most document leaks happen silently. A screenshot hits a forum, an offline laptop stays disconnected, and traditional access control stays blind.
+                    </p>
+                    <p class="statement-line mf-lit">
+                        SentinelTrace hides mathematical proof inside every sentence and shreds RAM decryption keys the instant a monotonic lease expires.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 5: HOW IT WORKS (MIND DIAGRAM + 3 CARDS) -->
+        <section id="pipeline" class="how-section" data-mf-cue="tint" data-mf-tint="#8B6BFF" data-mf-quiet="1">
+            <div class="section-wrap">
+                <div class="section-split-header mf-rv">
+                    <div style="display:flex; flex-direction:column; gap:16px; max-width:560px;">
+                        <div class="kicker">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#FFB627" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>How It Works</span>
+                        </div>
+                        <h2 class="display-section">One source file, then parallel verification gates</h2>
+                    </div>
+                    <p class="lead-copy" style="max-width:480px; font-size:16px; color:var(--text-secondary);">
+                        Every distribution generates redundant zero-width chunks, PDF vector overlays, HMAC-SHA256 signatures, and monotonic RAM lease checks before attribution confirms.
+                    </p>
+                </div>
+
+                <!-- Animated MindDiagram adapted cleanly from leaklens.framer.ai -->
+                <div class="diagram-panel mf-rv">
+                    <svg viewBox="0 0 1200 470" style="width:100%; height:auto; display:block; overflow:visible;" role="img" aria-label="Source Document feeds four parallel encoding branches into the Verification Gate returning 100% attribution.">
+                        <defs>
+                            <radialGradient id="agGh">
+                                <stop offset="0" stop-color="#9A82FF" stop-opacity="0.9"/>
+                                <stop offset="1" stop-color="#7B5CFA" stop-opacity="0"/>
+                            </radialGradient>
+                            <radialGradient id="agYh">
+                                <stop offset="0" stop-color="#FFB627" stop-opacity="0.85"/>
+                                <stop offset="1" stop-color="#FFB627" stop-opacity="0"/>
+                            </radialGradient>
+                            <linearGradient id="agEh" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0" stop-color="#9A82FF" stop-opacity="0.55"/>
+                                <stop offset="1" stop-color="#2BD8C8" stop-opacity="0.55"/>
+                            </linearGradient>
+                        </defs>
+
+                        <!-- Bezier curves left -> parallel branches -->
+                        <path id="p1" d="M164,235 C292,235 292,85 420,85" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+                        <path id="p2" d="M164,235 C292,235 292,185 420,185" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+                        <path id="p3" d="M164,235 C292,235 292,285 420,285" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+                        <path id="p4" d="M164,235 C292,235 292,385 420,385" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+
+                        <!-- Bezier curves parallel branches -> gate -->
+                        <path id="p5" d="M460,85 C575,85 575,235 690,235" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+                        <path id="p6" d="M460,185 C575,185 575,235 690,235" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+                        <path id="p7" d="M460,285 C575,285 575,235 690,235" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+                        <path id="p8" d="M460,385 C575,385 575,235 690,235" stroke="url(#agEh)" stroke-width="1.3" fill="none"/>
+
+                        <!-- Gate -> Final gold metric -->
+                        <path id="p9" d="M880,235 C938,235 938,235 997,235" stroke="#FFB627" stroke-opacity="0.6" stroke-width="1.6" stroke-dasharray="4 6" fill="none"/>
+
+                        <!-- Moving photon particles -->
+                        <circle r="3.4" fill="#9A82FF"><animateMotion dur="1.8s" begin="0s" repeatCount="indefinite"><mpath href="#p1"/></animateMotion></circle>
+                        <circle r="3.4" fill="#9A82FF"><animateMotion dur="1.8s" begin="0.45s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion></circle>
+                        <circle r="3.4" fill="#9A82FF"><animateMotion dur="1.8s" begin="0.9s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
+                        <circle r="3.4" fill="#9A82FF"><animateMotion dur="1.8s" begin="1.35s" repeatCount="indefinite"><mpath href="#p4"/></animateMotion></circle>
+                        <circle r="3.4" fill="#2BD8C8"><animateMotion dur="1.6s" begin="0.9s" repeatCount="indefinite"><mpath href="#p5"/></animateMotion></circle>
+                        <circle r="3.4" fill="#2BD8C8"><animateMotion dur="1.6s" begin="1.4s" repeatCount="indefinite"><mpath href="#p6"/></animateMotion></circle>
+                        <circle r="3.4" fill="#2BD8C8"><animateMotion dur="1.6s" begin="1.9s" repeatCount="indefinite"><mpath href="#p7"/></animateMotion></circle>
+                        <circle r="3.4" fill="#2BD8C8"><animateMotion dur="1.6s" begin="2.4s" repeatCount="indefinite"><mpath href="#p8"/></animateMotion></circle>
+                        <circle r="4.2" fill="#FFB627"><animateMotion dur="1.4s" begin="0.3s" repeatCount="indefinite"><mpath href="#p9"/></animateMotion></circle>
+
+                        <!-- Start Hub -->
+                        <g class="ag-n">
+                            <circle class="ag-gl" cx="120" cy="235" r="78" fill="url(#agGh)"/>
+                            <circle cx="120" cy="235" r="38" fill="#0A0814" stroke="#9A82FF" stroke-width="1.5"/>
+                            <g transform="translate(107,221)">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#FFF" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+                            </g>
+                            <text x="120" y="301" text-anchor="middle" fill="#F3F2F8" font-size="18" font-weight="500" font-family="Onest, sans-serif">Source Doc</text>
+                            <text x="120" y="323" text-anchor="middle" fill="rgba(243,242,248,0.5)" font-size="13" font-family="Inter, sans-serif">Sign per recipient + session</text>
+                        </g>
+
+                        <!-- Parallel Branches -->
+                        <g class="ag-n">
+                            <circle cx="440" cy="85" r="20" fill="#08120f" stroke="#2BD8C8" stroke-width="1.3"/>
+                            <circle class="ag-gl" cx="440" cy="85" r="7" fill="#2BD8C8"/>
+                            <text x="476" y="82" fill="#F3F2F8" font-size="15.5" font-weight="500" font-family="Onest, sans-serif">Layer 1 · Stego</text>
+                            <rect x="476" y="94" width="110" height="3" rx="1.5" fill="rgba(255,255,255,0.12)"/>
+                            <rect class="ag-bar" x="476" y="94" width="110" height="3" rx="1.5" fill="#2BD8C8" style="transform-origin:476px 95px;"/>
+                            <text x="594" y="99" fill="rgba(243,242,248,0.5)" font-size="12" font-family="JetBrains Mono, monospace">zwc</text>
+                        </g>
+                        <g class="ag-n">
+                            <circle cx="440" cy="185" r="20" fill="#08120f" stroke="#2BD8C8" stroke-width="1.3"/>
+                            <circle class="ag-gl" cx="440" cy="185" r="7" fill="#2BD8C8" style="animation-delay:0.4s;"/>
+                            <text x="476" y="182" fill="#F3F2F8" font-size="15.5" font-weight="500" font-family="Onest, sans-serif">Layer 2 · HMAC</text>
+                            <rect x="476" y="194" width="110" height="3" rx="1.5" fill="rgba(255,255,255,0.12)"/>
+                            <rect class="ag-bar" x="476" y="194" width="110" height="3" rx="1.5" fill="#2BD8C8" style="transform-origin:476px 195px; animation-delay:0.55s;"/>
+                            <text x="594" y="199" fill="rgba(243,242,248,0.5)" font-size="12" font-family="JetBrains Mono, monospace">sha256</text>
+                        </g>
+                        <g class="ag-n">
+                            <circle cx="440" cy="285" r="20" fill="#08120f" stroke="#2BD8C8" stroke-width="1.3"/>
+                            <circle class="ag-gl" cx="440" cy="285" r="7" fill="#2BD8C8" style="animation-delay:0.8s;"/>
+                            <text x="476" y="282" fill="#F3F2F8" font-size="15.5" font-weight="500" font-family="Onest, sans-serif">Layer 3 · PDF Vector</text>
+                            <rect x="476" y="294" width="110" height="3" rx="1.5" fill="rgba(255,255,255,0.12)"/>
+                            <rect class="ag-bar" x="476" y="294" width="110" height="3" rx="1.5" fill="#2BD8C8" style="transform-origin:476px 295px; animation-delay:1.1s;"/>
+                            <text x="594" y="299" fill="rgba(243,242,248,0.5)" font-size="12" font-family="JetBrains Mono, monospace">layer</text>
+                        </g>
+                        <g class="ag-n">
+                            <circle cx="440" cy="385" r="20" fill="#08120f" stroke="#2BD8C8" stroke-width="1.3"/>
+                            <circle class="ag-gl" cx="440" cy="385" r="7" fill="#2BD8C8" style="animation-delay:1.2s;"/>
+                            <text x="476" y="382" fill="#F3F2F8" font-size="15.5" font-weight="500" font-family="Onest, sans-serif">Layer 4 · RAM Lease</text>
+                            <rect x="476" y="394" width="110" height="3" rx="1.5" fill="rgba(255,255,255,0.12)"/>
+                            <rect class="ag-bar" x="476" y="394" width="110" height="3" rx="1.5" fill="#2BD8C8" style="transform-origin:476px 395px; animation-delay:1.65s;"/>
+                            <text x="594" y="399" fill="rgba(243,242,248,0.5)" font-size="12" font-family="JetBrains Mono, monospace">aes256</text>
+                        </g>
+                        <text x="440" y="452" text-anchor="middle" fill="rgba(243,242,248,0.5)" font-size="13" font-family="Inter, sans-serif">Redundant chunks across every paragraph</text>
+
+                        <!-- Verification Gates Box -->
+                        <g>
+                            <rect x="690" y="50" width="190" height="370" rx="18" fill="rgba(10,10,16,0.88)" stroke="rgba(255,255,255,0.16)"/>
+                            <text x="785" y="84" text-anchor="middle" fill="#F3F2F8" font-size="16" font-weight="500" font-family="Onest, sans-serif">Security Gates</text>
+                            <g class="ag-ck"><rect x="706" y="112" width="158" height="42" rx="21" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)"/><circle cx="726" cy="133" r="8" fill="none" stroke="#2BD8C8" stroke-width="1.4"/><path d="M722,133 l3,3 l6,-6" stroke="#2BD8C8" stroke-width="1.6" fill="none" stroke-linecap="round"/><text x="744" y="137" fill="rgba(243,242,248,0.8)" font-size="13.5" font-family="Inter, sans-serif">10% Recovery</text></g>
+                            <g class="ag-ck" style="animation-delay:0.5s;"><rect x="706" y="170" width="158" height="42" rx="21" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)"/><circle cx="726" cy="191" r="8" fill="none" stroke="#2BD8C8" stroke-width="1.4"/><path d="M722,191 l3,3 l6,-6" stroke="#2BD8C8" stroke-width="1.6" fill="none" stroke-linecap="round"/><text x="744" y="195" fill="rgba(243,242,248,0.8)" font-size="13.5" font-family="Inter, sans-serif">HMAC Verified</text></g>
+                            <g class="ag-ck" style="animation-delay:1s;"><rect x="706" y="228" width="158" height="42" rx="21" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)"/><circle cx="726" cy="249" r="8" fill="none" stroke="#2BD8C8" stroke-width="1.4"/><path d="M722,249 l3,3 l6,-6" stroke="#2BD8C8" stroke-width="1.6" fill="none" stroke-linecap="round"/><text x="744" y="253" fill="rgba(243,242,248,0.8)" font-size="13.5" font-family="Inter, sans-serif">Anti-Clock Tamper</text></g>
+                            <g class="ag-ck" style="animation-delay:1.5s;"><rect x="706" y="286" width="158" height="42" rx="21" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)"/><circle cx="726" cy="307" r="8" fill="none" stroke="#2BD8C8" stroke-width="1.4"/><path d="M722,307 l3,3 l6,-6" stroke="#2BD8C8" stroke-width="1.6" fill="none" stroke-linecap="round"/><text x="744" y="311" fill="rgba(243,242,248,0.8)" font-size="13.5" font-family="Inter, sans-serif">RAM Zero-Fill</text></g>
+                            <g class="ag-ck" style="animation-delay:2s;"><rect x="706" y="344" width="158" height="42" rx="21" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)"/><circle cx="726" cy="365" r="8" fill="none" stroke="#FFB627" stroke-width="1.4"/><path d="M722,365 l3,3 l6,-6" stroke="#FFB627" stroke-width="1.6" fill="none" stroke-linecap="round"/><text x="744" y="369" fill="rgba(243,242,248,0.8)" font-size="13.5" font-family="Inter, sans-serif">Webhook Alert</text></g>
+                        </g>
+
+                        <!-- Final Gold Metric -->
+                        <g class="ag-n">
+                            <circle class="ag-gl" cx="1065" cy="235" r="114" fill="url(#agYh)"/>
+                            <circle cx="1065" cy="235" r="66" fill="#120D02" stroke="#FFB627" stroke-width="1.6"/>
+                            <text x="1065" y="246" text-anchor="middle" fill="#FFF" font-size="38" font-weight="500" letter-spacing="-1.5" font-family="Onest, sans-serif">100%</text>
+                            <text x="1065" y="271" text-anchor="middle" fill="#FFB627" font-size="11" letter-spacing="1.2" font-family="Onest, sans-serif">ATTRIBUTED</text>
+                            <text x="1065" y="338" text-anchor="middle" fill="#F3F2F8" font-size="15" font-family="Inter, sans-serif">Deterministic identity</text>
+                            <text x="1065" y="360" text-anchor="middle" fill="rgba(243,242,248,0.5)" font-size="12.5" font-family="Inter, sans-serif">Even on 10% snippet</text>
+                        </g>
+                    </svg>
+                </div>
+
+                <!-- 3 Lesson Cards -->
+                <div class="lessons-grid mf-rv">
+                    <div class="lesson-card mf-lift">
+                        <div class="lesson-head">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#2BD8C8" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Partial Snippets Survive</span>
+                        </div>
+                        <p class="muted-copy">
+                            Embedding zero-width sequences (<code style="font-family:var(--font-mono);color:var(--teal);">\u200b</code>, <code style="font-family:var(--font-mono);color:var(--teal);">\u200c</code>, <code style="font-family:var(--font-mono);color:var(--teal);">\u200d</code>) after every sentence lets judges delete paragraphs and still recover Alice’s exact session.
+                        </p>
+                    </div>
+                    <div class="lesson-card mf-lift">
+                        <div class="lesson-head">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#2BD8C8" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Clock Rewinds Fail</span>
+                        </div>
+                        <p class="muted-copy">
+                            Offline leases bind RS256 signed JWTs to relative monotonic clock deltas (<code style="font-family:var(--font-mono);color:var(--teal);">time.monotonic()</code>), catching manual OS clock tampering in milliseconds.
+                        </p>
+                    </div>
+                    <div class="lesson-card mf-lift">
+                        <div class="lesson-head">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#FFB627" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Original PDFs Stay Intact</span>
+                        </div>
+                        <p class="muted-copy">
+                            Copy-to-copy PDF watermarking preserves 100% of original layouts while overlaying transparent ArialUnicode binary text and signed PDF metadata.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 6: SPECS & INTERACTIVE TIMELINE (.mf-tl + .mf-ex) -->
+        <section id="specs" class="specs-section" data-mf-cue="tint" data-mf-tint="#FFB627" data-mf-quiet="1">
+            <div class="section-wrap">
+                <div class="specs-row">
+                    <div class="mf-rv">
+                        <div class="kicker">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#FFB627" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Technical Specifications</span>
+                        </div>
+                        <h2 class="display-section" style="margin-top:16px;">Engineered for forensic depth</h2>
+                        <p class="lead-copy" style="margin-top:18px; font-size:16px; color:var(--text-secondary);">
+                            Zero visual drift across documents, verifiable HMAC integrity, and zero-disk RAM decryption cleanup.
+                        </p>
+
+                        <div class="stats-list">
+                            <div class="stat-item">
+                                <div class="mf-stat" style="width:128px;">0 px</div>
+                                <div class="muted-copy">visual distortion across text and PDF copies</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="mf-stat" style="width:128px;">10%</div>
+                                <div class="muted-copy">minimum leaked snippet needed for attribution</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="mf-stat" style="width:128px;">256-bit</div>
+                                <div class="muted-copy">AES-GCM RAM key wiped to 0x00 upon expiry</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mf-tl mf-rv" id="specTimeline">
+                        <div class="mf-ex op">
+                            <div class="mf-dot"></div>
+                            <button class="mf-tg" onclick="toggleSpecRow(this)">
+                                <div>
+                                    <div style="font-size:12px; color:var(--gold); font-family:var(--font-mono);">LAYER 01 · TEXT &amp; STEGANOGRAPHY</div>
+                                    <div style="font-family:var(--font-display); font-size:19px; font-weight:500; margin-top:4px;">Redundant Zero-Width Unicode Encoder</div>
+                                </div>
+                                <span class="mf-tg-icon">+</span>
+                            </button>
+                            <div class="mf-exd">
+                                Converts <code style="font-family:var(--font-mono);color:var(--gold);">recipient_id|session_id|hmac8</code> into 8-bit binary frames mapped to <code style="font-family:var(--font-mono);color:var(--gold);">\u200b</code> (0) and <code style="font-family:var(--font-mono);color:var(--gold);">\u200c</code> (1), framed by <code style="font-family:var(--font-mono);color:var(--gold);">\u200d</code>. Injected cleanly after every sentence delimiter so partial copy-pastes retain multiple full payloads.
+                            </div>
+                        </div>
+
+                        <div class="mf-ex">
+                            <div class="mf-dot"></div>
+                            <button class="mf-tg" onclick="toggleSpecRow(this)">
+                                <div>
+                                    <div style="font-size:12px; color:var(--violet-soft); font-family:var(--font-mono);">LAYER 02 · OFFLINE DRM</div>
+                                    <div style="font-family:var(--font-display); font-size:19px; font-weight:500; margin-top:4px;">Monotonic Clock + RS256 Signed Leases</div>
+                                </div>
+                                <span class="mf-tg-icon">+</span>
+                            </button>
+                            <div class="mf-exd">
+                                Tracks elapsed uptime with Python <code style="font-family:var(--font-mono);color:var(--violet-soft);">time.monotonic()</code> alongside <code style="font-family:var(--font-mono);color:var(--violet-soft);">client_elapsed_seconds</code> and RS256 signed JWT lease envelopes. Any negative wall-clock drift triggers immediate tamper flags and key destruction.
+                            </div>
+                        </div>
+
+                        <div class="mf-ex">
+                            <div class="mf-dot"></div>
+                            <button class="mf-tg" onclick="toggleSpecRow(this)">
+                                <div>
+                                    <div style="font-size:12px; color:var(--teal); font-family:var(--font-mono);">LAYER 03 · EPHEMERAL RAM</div>
+                                    <div style="font-family:var(--font-display); font-size:19px; font-weight:500; margin-top:4px;">Zero-Disk Decryption &amp; In-Memory Zero-Fill</div>
+                                </div>
+                                <span class="mf-tg-icon">+</span>
+                            </button>
+                            <div class="mf-exd">
+                                Confidential content never lands unencrypted on disk. When <code style="font-family:var(--font-mono);color:var(--teal);">/api/revoke-lease</code> or natural lease expiration runs, the active AES-256-GCM key buffer is zeroed out (<code style="font-family:var(--font-mono);color:var(--teal);">0x00...RAM-ZERO-FILLED</code>) and the UI curtain locks.
+                            </div>
+                        </div>
+
+                        <div class="mf-ex">
+                            <div class="mf-dot"></div>
+                            <button class="mf-tg" onclick="toggleSpecRow(this)">
+                                <div>
+                                    <div style="font-size:12px; color:var(--gold); font-family:var(--font-mono);">LAYER 04 · MULTIMODAL PDF</div>
+                                    <div style="font-family:var(--font-display); font-size:19px; font-weight:500; margin-top:4px;">Copy-to-Copy Transparent ArialUnicode Layer</div>
+                                </div>
+                                <span class="mf-tg-icon">+</span>
+                            </button>
+                            <div class="mf-exd">
+                                Uses <code style="font-family:var(--font-mono);color:var(--gold);">pypdf</code> (<code style="font-family:var(--font-mono);color:var(--gold);">PdfWriter(clone_from=...)</code>) and <code style="font-family:var(--font-mono);color:var(--gold);">reportlab</code> with <code style="font-family:var(--font-mono);color:var(--gold);">ArialUnicode</code> TTF font support to stamp an invisible vector layer + signed <code style="font-family:var(--font-mono);color:var(--gold);">/Author</code> and <code style="font-family:var(--font-mono);color:var(--gold);">/Subject</code> metadata directly onto original PDFs without altering typography.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 7: SELECTED MODALITIES WITH ANIMATED MIND ORBS -->
+        <section id="capabilities" class="capabilities-section" data-mf-cue="tint" data-mf-tint="#2BD8C8" data-mf-quiet="1">
+            <div class="section-wrap">
+                <div class="section-split-header mf-rv">
+                    <div style="display:flex; flex-direction:column; gap:14px;">
+                        <div class="kicker teal">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#2BD8C8" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Core Capabilities</span>
+                        </div>
+                        <h2 class="display-section">Built for real adversarial workflows</h2>
+                    </div>
+                    <p class="muted-copy" style="max-width:420px;">
+                        Click any modality below to jump straight into its interactive console tab above.
+                    </p>
+                </div>
+
+                <div class="orb-grid mf-rv">
+                    <div class="orb-card mf-lift" onclick="jumpToEngineTab('watermark')">
+                        <div class="orb-stage" id="orbStage1"></div>
+                        <div style="display:flex; flex-direction:column; gap:10px;">
+                            <div class="kicker" style="font-size:11.5px;">01 · STEGANOGRAPHY</div>
+                            <div style="font-family:var(--font-display); font-size:22px; font-weight:500;">Redundant Text &amp; PDF Layering</div>
+                            <p class="muted-copy" style="font-size:14px;">
+                                Distribute visually identical documents across unlimited recipients while embedding unique cryptographic signatures into every sentence.
+                            </p>
+                            <span style="color:var(--gold); font-size:13px; font-weight:500; margin-top:6px;">Open Watermark Generator →</span>
+                        </div>
+                    </div>
+
+                    <div class="orb-card mf-lift" onclick="jumpToEngineTab('inspector')">
+                        <div class="orb-stage" id="orbStage2"></div>
+                        <div style="display:flex; flex-direction:column; gap:10px;">
+                            <div class="kicker violet" style="font-size:11.5px;">02 · ATTRIBUTION</div>
+                            <div style="font-family:var(--font-display); font-size:22px; font-weight:500;">Partial Recovery &amp; Live Alerts</div>
+                            <p class="muted-copy" style="font-size:14px;">
+                                Paste 1 leaked sentence or upload an extracted PDF to trigger instant recipient attribution and critical webhook incident alerts.
+                            </p>
+                            <span style="color:var(--violet-soft); font-size:13px; font-weight:500; margin-top:6px;">Open Forensic Inspector →</span>
+                        </div>
+                    </div>
+
+                    <div class="orb-card mf-lift" onclick="jumpToEngineTab('drm')">
+                        <div class="orb-stage" id="orbStage3"></div>
+                        <div style="display:flex; flex-direction:column; gap:10px;">
+                            <div class="kicker teal" style="font-size:11.5px;">03 · OFFLINE DRM</div>
+                            <div style="font-family:var(--font-display); font-size:22px; font-weight:500;">Monotonic Leases &amp; QR Renewals</div>
+                            <p class="muted-copy" style="font-size:14px;">
+                                Test anti-clock-tampering defenses, RS256 signed <code style="font-family:var(--font-mono);color:var(--teal);">.lease</code> tokens, RAM zero-fill shredding, and air-gapped QR challenge renewals.
+                            </p>
+                            <span style="color:var(--teal); font-size:13px; font-weight:500; margin-top:6px;">Open Offline DRM Engine →</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 8: PRINCIPLES -->
+        <section class="principles-section" data-mf-cue="tint" data-mf-tint="#9A82FF" data-mf-quiet="1">
+            <div class="section-wrap mf-rv">
+                <div class="kicker violet" style="justify-content:center;">
+                    <span>Architecture Principles, in Four Lines</span>
+                </div>
+                <div class="principles-list">
+                    <div class="principle-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" stroke="#FFB627" stroke-width="1.6"/></svg>
+                        <span>Embed math after every sentence, never once.</span>
+                    </div>
+                    <div class="principle-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" stroke="#9A82FF" stroke-width="1.6"/></svg>
+                        <span>Never trust wall-clock timestamps offline.</span>
+                    </div>
+                    <div class="principle-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" stroke="#2BD8C8" stroke-width="1.6"/></svg>
+                        <span>Wipe AES keys from RAM on millisecond expiry.</span>
+                    </div>
+                    <div class="principle-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" stroke="#FFB627" stroke-width="1.6"/></svg>
+                        <span>Preserve every original PDF layout 100%.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 9: CONTACT / REFORM BRAIN CTA -->
+        <section id="contact" class="contact-section" data-mf-cue="reform" data-mf-tint="#FFB627" data-mf-quiet="1">
+            <div class="section-wrap">
+                <div style="max-width:600px; display:flex; flex-direction:column; gap:18px;" class="mf-rv">
+                    <div class="kicker">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#FFB627" stroke-width="1.5" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Deploy &amp; Connect</span>
+                    </div>
+                    <h2 class="display-xl">Trace everything.</h2>
+                    <p class="lead-copy">
+                        Launch the interactive forensic workspace or visit the companion Framer showcase at
+                        <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener" style="color:var(--gold); text-decoration:underline;">https://leaklens.framer.ai/</a>.
+                    </p>
+                    <div class="hero-actions" style="margin-top:8px;">
+                        <a href="#engine" class="lt-pill">Back to Live Engine ↑</a>
+                        <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener" class="lt-pill secondary">Open leaklens.framer.ai ↗</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FOOTER -->
+        <footer class="site-footer">
+            <div>© 2026 LeakLens · SentinelTrace Forensic &amp; Offline DRM Engine</div>
+            <div class="footer-links">
+                <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener">leaklens.framer.ai</a>
+                <a href="/api/health" target="_blank" rel="noopener">API Health</a>
+                <a href="/docs" target="_blank" rel="noopener">FastAPI OpenAPI Docs</a>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        /* ==============================================================
+           1. MINDFIELD WEBGL 3D PARTICLE BRAIN & NEURAL FIELD ENGINE
+              Exact port of the leaklens.framer.ai WebGL shaders & brain math
+           ============================================================== */
+        (function initMindField() {
+            const wrap = document.getElementById('mindFieldWrap');
+            const canvas = document.getElementById('mindFieldCanvas');
+            if (!wrap || !canvas) return;
+
+            let gl = null;
+            try {
+                gl = canvas.getContext('webgl', { antialias: false, alpha: true, premultipliedAlpha: true }) ||
+                     canvas.getContext('experimental-webgl');
+            } catch {
+                gl = null;
+            }
+            if (!gl) return;
+
+            function makePrng(seed) {
+                let t = seed >>> 0;
+                return () => {
+                    t |= 0;
+                    t = (t + 1831565813) | 0;
+                    let e = Math.imul(t ^ (t >>> 15), 1 | t);
+                    e = (e + Math.imul(e ^ (e >>> 7), 61 | e)) ^ e;
+                    return ((e ^ (e >>> 14)) >>> 0) / 4294967296;
+                };
+            }
+
+            const perm = (() => {
+                const rand = makePrng(7);
+                const t = new Uint8Array(512);
+                const n = Array.from({ length: 256 }, (_, i) => i);
+                for (let i = 255; i > 0; i--) {
+                    const r = Math.floor(rand() * (i + 1));
+                    [n[i], n[r]] = [n[r], n[i]];
+                }
+                for (let i = 0; i < 512; i++) t[i] = n[i & 255];
+                return t;
+            })();
+
+            const grad = [1,1,0,-1,1,0,1,-1,0,-1,-1,0,1,0,1,-1,0,1,1,0,-1,-1,0,-1,0,1,1,0,-1,1,0,1,-1,0,-1,-1];
+            const clamp = (v, lo = 0, hi = 1) => v < lo ? lo : v > hi ? hi : v;
+            const smoothstep = (e, t, n) => { const r = clamp((n - e) / (t - e)); return r * r * (3 - 2 * r); };
+            const mix = (a, b, t) => a + (b - a) * t;
+            const fade = (e) => e * e * e * (e * (e * 6 - 15) + 10);
+            const dotG = (idx, x, y, z) => { const i = (idx % 12) * 3; return grad[i] * x + grad[i + 1] * y + grad[i + 2] * z; };
+
+            function noise3(x, y, z) {
+                const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+                x -= xi; y -= yi; z -= zi;
+                const o = xi & 255, s = yi & 255, c = zi & 255;
+                const u = fade(x), v = fade(y), w = fade(z);
+                const f = perm[o] + s, p = perm[f] + c, m = perm[f + 1] + c;
+                const h = perm[o + 1] + s, g = perm[h] + c, k = perm[h + 1] + c;
+                return mix(
+                    mix(mix(dotG(perm[p], x, y, z), dotG(perm[g], x - 1, y, z), u),
+                        mix(dotG(perm[m], x, y - 1, z), dotG(perm[k], x - 1, y - 1, z), u), v),
+                    mix(mix(dotG(perm[p + 1], x, y, z - 1), dotG(perm[g + 1], x - 1, y, z - 1), u),
+                        mix(dotG(perm[m + 1], x, y - 1, z - 1), dotG(perm[k + 1], x - 1, y - 1, z - 1), u), v),
+                    w
+                );
+            }
+
+            function sampleCortex(rand) {
+                const side = rand() < 0.5 ? -1 : 1;
+                const z0 = rand() * 2 - 1, ang = rand() * Math.PI * 2, r = Math.sqrt(1 - z0 * z0);
+                const ax = r * Math.cos(ang), oy = z0, az = r * Math.sin(ang);
+                const medial = az * side < 0;
+                let l = 0.8, u = 0.6;
+                if (ax < -0.3) { l *= 1 - 0.12 * smoothstep(-0.3, -1, ax); u *= 1 - 0.1 * smoothstep(-0.3, -1, ax); }
+                if (ax > 0.45) { l *= 1 - 0.18 * smoothstep(0.45, 1, ax); u *= 1 - 0.2 * smoothstep(0.45, 1, ax); }
+                const d = Math.sqrt(ax * ax + (oy / l) ** 2 + (az / u) ** 2) * l * u;
+                if (rand() > d / 0.74) return null;
+                let fx = ax, py = oy * l, mz = az * u;
+                if (medial) mz *= 0.22;
+                if (py < 0) {
+                    py *= 0.66;
+                    py -= 0.27 * Math.exp(-(((fx + 0.1) / 0.45) ** 2)) * smoothstep(-0.05, -0.6, oy) * (medial ? 0.25 : 1);
+                }
+                if (py > 0) py *= 1 + 0.07 * Math.exp(-(((fx - 0.1) / 0.6) ** 2));
+                const g = noise3(fx * 3.3 + side * 17.3, py * 3.96 + 3.1, mz * 4.95 + 1.7) +
+                          0.4 * noise3(fx * 6.93, py * 6.93 + 9, mz * 6.93 - 4);
+                const ridge = Math.exp(-((g / 0.1) ** 2));
+                let sylv = 0;
+                if (!medial && fx > -0.62 && fx < 0.42) {
+                    sylv = Math.exp(-(((py - (-0.06 + 0.3 * (fx + 0.55))) / 0.03) ** 2)) * smoothstep(-0.62, -0.45, fx);
+                }
+                if (Math.max(ridge, sylv) > 0.3) return null;
+                const fold = Math.max(Math.exp(-((g / 0.26) ** 2)), sylv);
+                const sc = 1 - 0.06 * fold - 0.035 * g;
+                return [fx * sc, py * sc + 0.12, mz * sc + side * 0.15, ax, (py < 0 ? oy * 1.6 : oy) / l, (medial ? az * 0.3 : az) / u, fold];
+            }
+
+            function sampleCerebellum(rand) {
+                const t = rand() * 2 - 1, ang = rand() * Math.PI * 2, r = Math.sqrt(1 - t * t);
+                const ix = r * Math.cos(ang), iy = t, iz = r * Math.sin(ang);
+                if (iy > 0.2 && ix < 0.2) return null;
+                const s = ix * 0.3, c = iy * 0.18, l = iz * 0.62;
+                if (Math.abs(Math.sin((c + 0.03 * noise3(s * 6, l * 6, 1)) * 48)) < 0.28) return null;
+                return [s + 0.47, c - 0.27, l * 0.92, ix, iy, iz, 0];
+            }
+
+            function sampleStem(rand) {
+                const t = rand(), ang = rand() * Math.PI * 2, r = mix(0.14, 0.095, t);
+                return [mix(0.2, 0.28, t) + Math.cos(ang) * r * 0.8, mix(-0.3, -0.92, t), Math.sin(ang) * r, Math.cos(ang), 0, Math.sin(ang), 0];
+            }
+
+            function buildPointCloud(count) {
+                const rand = makePrng(11);
+                const pos = new Float32Array(count * 3);
+                const nrm = new Float32Array(count * 3);
+                const rnd = new Float32Array(count * 4);
+                const fld = new Float32Array(count * 3);
+                const stag = new Float32Array(count);
+                let c = 0;
+                const minDist = 0.026 * Math.sqrt(12000 / count);
+                const grid = new Map();
+                const cell = (x, y, z) => (Math.floor(x / minDist) + 512) * 1048576 + (Math.floor(y / minDist) + 512) * 1024 + (Math.floor(z / minDist) + 512);
+
+                const ok = (x, y, z, dLim) => {
+                    const cx = Math.floor(x / minDist), cy = Math.floor(y / minDist), cz = Math.floor(z / minDist), d2 = dLim * dLim;
+                    for (let dx = -1; dx <= 1; dx++)
+                        for (let dy = -1; dy <= 1; dy++)
+                            for (let dz = -1; dz <= 1; dz++) {
+                                const list = grid.get((cx + dx + 512) * 1048576 + (cy + dy + 512) * 1024 + (cz + dz + 512));
+                                if (list) {
+                                    for (let k = 0; k < list.length; k++) {
+                                        const idx = list[k] * 3;
+                                        const rx = pos[idx] - x, ry = pos[idx + 1] - y, rz = pos[idx + 2] - z;
+                                        if (rx * rx + ry * ry + rz * rz < d2) return false;
+                                    }
+                                }
+                            }
+                    return true;
+                };
+
+                const pushPt = (e, part = 0) => {
+                    const x = e[0], y = e[1], z = e[2];
+                    pos[c * 3] = x; pos[c * 3 + 1] = y; pos[c * 3 + 2] = z;
+                    const mag = (Math.hypot(e[3], e[4], e[5]) || 1) / (1 - 0.5 * clamp(e[6] || 0));
+                    nrm[c * 3] = e[3] / mag; nrm[c * 3 + 1] = e[4] / mag; nrm[c * 3 + 2] = e[5] / mag;
+                    rnd[c * 4] = ((noise3(x * 1.9 + 5, y * 1.9, z * 1.9) * 2.4 + rand() * 0.42) % 1 + 1) % 1;
+                    rnd[c * 4 + 1] = rand();
+                    rnd[c * 4 + 2] = part * 2 + rand();
+                    rnd[c * 4 + 3] = rand();
+                    fld[c * 3] = (rand() * 2 - 1) * 1.25;
+                    fld[c * 3 + 1] = (rand() * 2 - 1) * 1.25;
+                    fld[c * 3 + 2] = -8 + (rand() ** 1.5) * 11;
+                    stag[c] = clamp(0.55 * (1 - (y + 1) / 1.9) + 0.45 * rand());
+                    const k = cell(x, y, z);
+                    const arr = grid.get(k);
+                    if (arr) arr.push(c); else grid.set(k, [c]);
+                    c++;
+                };
+
+                const parts = [[sampleCortex, 0.84, 1], [sampleCerebellum, 0.07, 0.9], [sampleStem, 0.02, 1.4]];
+                const halo = Math.floor(count * 0.015);
+                let idx = 0;
+                for (const [fn, frac, mul] of parts) {
+                    const target = c + Math.floor((count - halo) * frac);
+                    let tries = 0;
+                    while (c < target && tries++ < count * 55) {
+                        const pt = fn(rand);
+                        if (pt && ok(pt[0], pt[1], pt[2], minDist * mul)) pushPt(pt, idx);
+                    }
+                    idx++;
+                }
+                const rem = Math.min(count, c + halo);
+                while (c < rem) {
+                    const z0 = rand() * 2 - 1, ang = rand() * Math.PI * 2, r = Math.sqrt(1 - z0 * z0), rad = 1.08 + rand() * 0.55;
+                    pushPt([r * Math.cos(ang) * rad * 1.05, z0 * rad * 0.8 + 0.1, r * Math.sin(ang) * rad * 0.95, r * Math.cos(ang), z0, r * Math.sin(ang)], 3);
+                }
+                return { n: c, pos, nrm, rnd, fld, stag };
+            }
+
+            function persp(fov, aspect, near, far) {
+                const f = 1 / Math.tan(fov / 2);
+                return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, (2 * far * near) / (near - far), 0];
+            }
+
+            function rot3(ry, rx, rz = 0) {
+                const cy = Math.cos(ry), sy = Math.sin(ry), cx = Math.cos(rx), sx = Math.sin(rx), cz = Math.cos(rz), sz = Math.sin(rz);
+                const my = [cy, 0, -sy, 0, 1, 0, sy, 0, cy];
+                const mx = [1, 0, 0, 0, cx, sx, 0, -sx, cx];
+                const mz = [cz, sz, 0, -sz, cz, 0, 0, 0, 1];
+                const mul = (A, B) => {
+                    const out = Array(9).fill(0);
+                    for (let r = 0; r < 3; r++)
+                        for (let i = 0; i < 3; i++)
+                            for (let a = 0; a < 3; a++) out[r * 3 + i] += A[a * 3 + i] * B[r * 3 + a];
+                    return out;
+                };
+                return mul(mz, mul(mx, my));
+            }
+
+            function parseRgb(hex, def = [1, 1, 1]) {
+                const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+                if (!m) return def;
+                const v = parseInt(m[1], 16);
+                return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+            }
+
+            const vsSrc = `
+                attribute vec4 aPos; attribute float aHeat; attribute vec3 aNrm; attribute vec4 aRnd;
+                uniform mat4 uPV; uniform mat3 uRot; uniform vec3 uCam; uniform float uSize; uniform float uTime;
+                uniform vec3 uTint; uniform float uTintAmt; uniform float uPx; uniform float uKeep; uniform float uFade;
+                uniform vec3 uA; uniform vec3 uB; uniform vec3 uC;
+                varying vec3 vCol; varying float vA; varying float vAng; varying float vSz; varying float vSeed;
+                void main() {
+                    vec4 cp = uPV * vec4(aPos.xyz, 1.0);
+                    gl_Position = cp;
+                    float d = aPos.w;
+                    float crest = length(aNrm) * 2.0 - 1.0;
+                    vec3 n = normalize(uRot * aNrm);
+                    vec3 vd = normalize(uCam - aPos.xyz);
+                    float nv = dot(n, vd);
+                    float rim = 1.0 - abs(nv);
+                    float part0 = floor(aRnd.z / 2.0);
+                    if (part0 > 0.5 && part0 < 1.5) rim *= 0.55;
+                    float r = aRnd.x;
+                    vec3 gold = uA;
+                    vec3 amber = uA * vec3(1.0, 0.78, 0.77);
+                    vec3 violet = uB;
+                    vec3 teal = uC;
+                    vec3 white = vec3(0.93, 0.92, 1.0);
+                    vec3 pink = mix(uB, vec3(1.0), 0.28);
+                    vec3 inner = r < 0.5 ? white : r < 0.72 ? gold : r < 0.84 ? teal : r < 0.95 ? violet : pink;
+                    vec3 c = mix(inner, r < 0.7 ? violet : pink, smoothstep(0.48, 0.66, rim) * 0.75);
+                    c = mix(c, r < 0.3 ? amber : gold, smoothstep(0.6, 0.82, rim));
+                    vec3 fc = r < 0.42 ? gold : r < 0.6 ? white : r < 0.78 ? violet : r < 0.9 ? teal : pink;
+                    c = mix(c, fc, d);
+                    c = mix(c, uTint, uTintAmt * d);
+                    c = mix(c, white, aHeat * 0.75);
+                    vCol = c;
+                    float facing = mix(0.2, 1.0, smoothstep(-0.3, 0.3, nv));
+                    float a = mix(facing * (0.3 + 0.7 * crest * crest) * 1.15, 1.0, d);
+                    float part = floor(aRnd.z / 2.0);
+                    if (part > 2.5) a *= 0.3 * (1.0 - d) + d;
+                    else if (part > 1.5) a *= 0.45 * (1.0 - d) + d;
+                    else if (part > 0.5) a *= 0.32 * (1.0 - d) + d;
+                    float keep = step(mod(aRnd.z, 2.0), uKeep);
+                    a *= mix(1.0, keep * 0.85, smoothstep(0.2, 0.9, d));
+                    a *= mix(1.0, uFade, smoothstep(0.2, 0.9, d));
+                    vA = a;
+                    float sz = uSize * (0.72 + aRnd.y * 0.62) * (1.0 + aHeat * 2.1);
+                    sz *= 1.0 + d * (aRnd.w * aRnd.w * aRnd.w * 1.4 - 0.15);
+                    float px = sz * uPx / max(cp.w, 0.1);
+                    px = clamp(px, 1.5, 26.0);
+                    gl_PointSize = px;
+                    vSz = px;
+                    vSeed = aRnd.w;
+                    vAng = aRnd.w * 6.2831 + uTime * (0.15 + aRnd.y * 0.5) * (0.35 + d + aHeat);
+                }
+            `;
+
+            const fsSrc = `
+                precision mediump float;
+                varying vec3 vCol; varying float vA; varying float vAng; varying float vSz; varying float vSeed;
+                float seg(vec2 p, vec2 a, vec2 b) {
+                    vec2 pa = p - a, ba = b - a;
+                    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+                    return length(pa - ba * h);
+                }
+                void main() {
+                    vec2 p = gl_PointCoord * 2.0 - 1.0; p.y = -p.y;
+                    float c = cos(vAng), s = sin(vAng);
+                    p = mat2(c, -s, s, c) * p;
+                    vec2 A = vec2(0.0, 0.84), B = vec2(-0.76, -0.46), C = vec2(0.76, -0.46);
+                    vec2 D = vec2(sin(vAng * 1.7 + vSeed * 9.0) * 0.3, cos(vAng * 1.3) * 0.26 - 0.04);
+                    float e1 = min(min(seg(p, A, B), seg(p, B, C)), seg(p, C, A));
+                    float e2 = min(min(seg(p, A, D), seg(p, B, D)), seg(p, C, D));
+                    float w = clamp(2.2 / vSz, 0.06, 0.5);
+                    float aa = 2.0 / vSz;
+                    float a1 = 1.0 - smoothstep(w * 0.5, w * 0.5 + aa, e1);
+                    float a2 = (1.0 - smoothstep(w * 0.4, w * 0.4 + aa, e2)) * 0.55;
+                    float a = max(a1, a2);
+                    a = max(a, (1.0 - smoothstep(0.0, 1.0, length(p))) * step(vSz, 3.0) * 0.9);
+                    a *= vA;
+                    if (a < 0.01) discard;
+                    gl_FragColor = vec4(vCol * a, a);
+                }
+            `;
+
+            const compile = (type, src) => {
+                const sh = gl.createShader(type);
+                gl.shaderSource(sh, src);
+                gl.compileShader(sh);
+                return sh;
+            };
+            const prog = gl.createProgram();
+            gl.attachShader(prog, compile(gl.VERTEX_SHADER, vsSrc));
+            gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fsSrc));
+            gl.linkProgram(prog);
+            gl.useProgram(prog);
+
+            const loc = (n) => gl.getUniformLocation(prog, n);
+            const uPV = loc('uPV'), uRot = loc('uRot'), uCam = loc('uCam'), uSize = loc('uSize'),
+                  uTime = loc('uTime'), uTint = loc('uTint'), uTintAmt = loc('uTintAmt'),
+                  uPx = loc('uPx'), uKeep = loc('uKeep'), uFade = loc('uFade');
+
+            const colA = parseRgb('#FFB627'), colB = parseRgb('#7B5CFA'), colC = parseRgb('#2BD8C8');
+            gl.uniform3f(loc('uA'), colA[0], colA[1], colA[2]);
+            gl.uniform3f(loc('uB'), colB[0], colB[1], colB[2]);
+            gl.uniform3f(loc('uC'), colC[0], colC[1], colC[2]);
+
+            const isPhone = () => window.innerWidth < 810;
+            let phoneState = isPhone();
+            let cloud = buildPointCloud(phoneState ? 4800 : 9500);
+            let P = cloud.n;
+            let F = new Float32Array(P * 5);
+            let I = new Float32Array(P * 3);
+            let L = new Float32Array(P * 3);
+            let R = new Float32Array(P);
+
+            const bufDyn = gl.createBuffer(), bufNrm = gl.createBuffer(), bufRnd = gl.createBuffer();
+            const aPos = gl.getAttribLocation(prog, 'aPos'), aHeat = gl.getAttribLocation(prog, 'aHeat'),
+                  aNrm = gl.getAttribLocation(prog, 'aNrm'), aRnd = gl.getAttribLocation(prog, 'aRnd');
+
+            const uploadStatic = () => {
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm);
+                gl.bufferData(gl.ARRAY_BUFFER, cloud.nrm.subarray(0, P * 3), gl.STATIC_DRAW);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufRnd);
+                gl.bufferData(gl.ARRAY_BUFFER, cloud.rnd.subarray(0, P * 4), gl.STATIC_DRAW);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufDyn);
+                gl.bufferData(gl.ARRAY_BUFFER, F.byteLength, gl.DYNAMIC_DRAW);
+            };
+            uploadStatic();
+
+            gl.disable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+            let W = 0, H = 0, dpr = 1;
+            const resize = () => {
+                dpr = Math.min(window.devicePixelRatio || 1, phoneState ? 1.5 : 1.6);
+                W = wrap.clientWidth || window.innerWidth;
+                H = wrap.clientHeight || window.innerHeight;
+                canvas.width = Math.round(W * dpr);
+                canvas.height = Math.round(H * dpr);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+            };
+            resize();
+            window.addEventListener('resize', () => {
+                const pNow = isPhone();
+                if (pNow !== phoneState) {
+                    phoneState = pNow;
+                    cloud = buildPointCloud(phoneState ? 4800 : 9500);
+                    P = cloud.n;
+                    F = new Float32Array(P * 5);
+                    I = new Float32Array(P * 3);
+                    L = new Float32Array(P * 3);
+                    R = new Float32Array(P);
+                    uploadStatic();
+                }
+                resize();
+            });
+
+            const ptr = { x: -9999, y: -9999, on: false, lx: 0, ly: 0 };
+            window.addEventListener('pointermove', (e) => {
+                ptr.x = e.clientX;
+                ptr.y = e.clientY;
+                ptr.on = true;
+            }, { passive: true });
+            document.addEventListener('pointerleave', () => { ptr.on = false; });
+
+            const cues = Array.from(document.querySelectorAll('[data-mf-cue]'));
+            let curTint = [...colA], tgtTint = [...colA], tgtTintAmt = 0, curTintAmt = 0;
+            let tgtReform = 0, curReform = 0, tgtQuiet = 0, curQuiet = 0;
+            const FOV = (22 * Math.PI) / 180, CAM_Z = 10;
+
+            const sampleCues = () => {
+                const vh = window.innerHeight || H;
+                let foundTint = null, q = 0, ref = 0;
+                for (const el of cues) {
+                    const rect = el.getBoundingClientRect();
+                    const type = el.getAttribute('data-mf-cue');
+                    if (type === 'reform') {
+                        ref = clamp((vh * 0.68 - rect.top) / (vh * 0.45));
+                    }
+                    if (rect.top < vh * 0.58 && rect.bottom > vh * 0.42) {
+                        const hex = el.getAttribute('data-mf-tint');
+                        if (hex) foundTint = parseRgb(hex, colA);
+                        if (el.getAttribute('data-mf-quiet') === '1') q = 1;
+                    }
+                }
+                if (foundTint) { tgtTint = foundTint; tgtTintAmt = 0.55; } else { tgtTintAmt = 0; }
+                tgtQuiet = q;
+                tgtReform = ref;
+            };
+
+            let scrollProg = 0, lastTs = performance.now(), startTs = lastTs;
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            const renderFrame = (now) => {
+                requestAnimationFrame(renderFrame);
+                if (document.hidden || !W || !H) { lastTs = now; return; }
+
+                const dt = Math.min(0.05, (now - lastTs) / 1000);
+                const tSec = (now - startTs) / 1000;
+                lastTs = now;
+
+                sampleCues();
+                const targetScroll = (window.scrollY || 0) / (window.innerHeight || H || 800);
+                scrollProg = mix(scrollProg, targetScroll, 1 - 0.0015 ** dt);
+                curReform = mix(curReform, tgtReform, 1 - 0.02 ** dt);
+                curQuiet = mix(curQuiet, tgtQuiet * (1 - curReform), 1 - 0.08 ** dt);
+                for (let i = 0; i < 3; i++) curTint[i] = mix(curTint[i], tgtTint[i], 0.05);
+                curTintAmt = mix(curTintAmt, tgtTintAmt, 0.05);
+
+                const aspect = W / H;
+                const s = CAM_Z * Math.tan(FOV / 2), c = s * aspect;
+                const mobile = W < 810, tablet = W >= 810 && W < 1200;
+                const mCut = (mobile || tablet) ? 1.3 : 1.85;
+                let hX = mobile || tablet ? 0.5 : 0.71;
+                let hY = mobile ? 0.80 : tablet ? 0.78 : 0.53;
+                let hSc = mobile ? 0.28 : tablet ? 0.34 : 0.62;
+
+                const t1 = smoothstep(0.05, 0.85, scrollProg);
+                const t2 = smoothstep(0.80, 1.50, scrollProg);
+                const t3 = smoothstep(mCut - 0.1, mCut + 0.9, scrollProg);
+
+                let ry = 0.16 + (Math.PI * 0.5 - 0.16) * t1 + Math.PI * 0.5 * t2 + (reducedMotion ? 0 : Math.sin(tSec * 0.35) * 0.06);
+                let rx = 0.07 + 0.03 * t1 - 0.06 * t2;
+                let rz = 0.03 * (1 - t1);
+
+                hX = mix(mix(hX, 0.5, t1), 0.25, t2);
+                hY = mix(hY, 0.5, t1);
+                hSc = mix(mix(hSc, 0.6, t1), 0.68, t2);
+                hSc *= 1 + 0.9 * t3 * t3;
+                hX = mix(hX, 0.5, t3);
+
+                if (ptr.on) {
+                    ptr.lx = mix(ptr.lx, ptr.x / W - 0.5, 0.04);
+                    ptr.ly = mix(ptr.ly, ptr.y / H - 0.5, 0.04);
+                }
+                ry += ptr.lx * 0.18;
+                rx += ptr.ly * 0.1;
+
+                const scaleWorld = (hSc * 2 * s) / 1.46;
+                const offX = (hX * 2 - 1) * c;
+                const offY = -(hY * 2 - 1) * s + 0.06 * scaleWorld;
+                const rotBrain = rot3(ry, rx, rz);
+
+                const refScale = ((mobile || tablet ? 0.3 : 0.54) * 2 * s) / 1.46;
+                const refOffX = (mobile || tablet ? 0.5 : 0.74) * 2 * c - c;
+                const refOffY = -(mobile || tablet ? 0.3 : 0.5) * 2 * s + s;
+                const rotRef = rot3(0.16 + Math.sin(tSec * 0.25) * 0.4 + ptr.lx * 0.18, 0.06, 0);
+
+                const PMat = persp(FOV, aspect, 0.1, 40);
+                const UMat = PMat.slice();
+                UMat[12] += UMat[8] * -10; UMat[13] += UMat[9] * -10; UMat[14] += UMat[10] * -10; UMat[15] += UMat[11] * -10;
+
+                const pxToWorld = (2 * s) / H;
+                const ptrRad = Math.max(90, Math.min(W, H) * 0.16);
+                const vPos = cloud.pos, vFld = cloud.fld, vStag = cloud.stag;
+                const driftT = tSec * 0.035;
+
+                for (let e = 0; e < P; e++) {
+                    const idx3 = e * 3;
+                    const px = vPos[idx3], py = vPos[idx3 + 1], pz = vPos[idx3 + 2];
+                    let bx = offX + scaleWorld * (rotBrain[0] * px + rotBrain[3] * py + rotBrain[6] * pz);
+                    let by = offY + scaleWorld * (rotBrain[1] * px + rotBrain[4] * py + rotBrain[7] * pz);
+                    let bz = scaleWorld * (rotBrain[2] * px + rotBrain[5] * py + rotBrain[8] * pz);
+                    let disp = smoothstep(0, 1, (scrollProg - mCut - vStag[e] * 0.75) / 0.55);
+
+                    let fyRaw = vFld[idx3 + 1] + driftT * (0.3 + (e % 7) * 0.05);
+                    fyRaw = ((fyRaw + 1.25) % 2.5 + 2.5) % 2.5 - 1.25;
+                    const fz = vFld[idx3 + 2], depthS = (CAM_Z - fz) / CAM_Z;
+                    const fx = (vFld[idx3] + Math.sin(tSec * 0.1 + e) * 0.02) * c * depthS;
+                    const fy = fyRaw * s * depthS;
+
+                    if (curReform > 0) {
+                        const rf = smoothstep(0, 1, (curReform - vStag[e] * 0.5) / 0.5);
+                        if (rf > 0) {
+                            const rbx = refOffX + refScale * (rotRef[0] * px + rotRef[3] * py + rotRef[6] * pz);
+                            const rby = refOffY + refScale * (rotRef[1] * px + rotRef[4] * py + rotRef[7] * pz);
+                            const rbz = refScale * (rotRef[2] * px + rotRef[5] * py + rotRef[8] * pz);
+                            bx = mix(bx, rbx, rf); by = mix(by, rby, rf); bz = mix(bz, rbz, rf);
+                            disp *= 1 - rf;
+                        }
+                    }
+
+                    const dEase = disp * disp * (3 - 2 * disp), arc = Math.sin(dEase * Math.PI) * 0.9;
+                    let sx = mix(bx, fx, dEase) + arc * (vFld[idx3] * 0.8);
+                    let sy = mix(by, fy, dEase) + arc * 0.3;
+                    let sz = mix(bz, fz, dEase) + arc * 0.5;
+
+                    let ox = I[idx3], oy = I[idx3 + 1], oz = I[idx3 + 2];
+                    let vx = L[idx3], vy = L[idx3 + 1], vz = L[idx3 + 2];
+                    let heat = R[e] * (0.9 ** (dt * 60));
+
+                    if (ptr.on) {
+                        const pw = UMat[3] * sx + UMat[7] * sy + UMat[11] * sz + UMat[15];
+                        const scrX = (((UMat[0] * sx + UMat[4] * sy + UMat[8] * sz + UMat[12]) / pw) * 0.5 + 0.5) * W;
+                        const scrY = (1 - (((UMat[1] * sx + UMat[5] * sy + UMat[9] * sz + UMat[13]) / pw) * 0.5 + 0.5)) * H;
+                        const dx = scrX - ptr.x, dy = scrY - ptr.y, dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+                        if (dist < ptrRad) {
+                            const f = 1 - dist / ptrRad, push = f * f * 9 * pxToWorld * 60;
+                            const nx = dx / dist, ny = dy / dist;
+                            vx += (nx * 0.9 - ny * 0.75) * push * dt;
+                            vy += (-ny * 0.9 - nx * 0.75) * push * dt;
+                            vz += f * f * 2.4 * dt;
+                            if (f > heat) heat = f;
+                        }
+                    }
+
+                    const damp = 0.86 ** (dt * 60);
+                    vx = (vx - ox * 22 * dt) * damp; vy = (vy - oy * 22 * dt) * damp; vz = (vz - oz * 22 * dt) * damp;
+                    ox += vx * dt; oy += vy * dt; oz += vz * dt;
+                    I[idx3] = ox; I[idx3 + 1] = oy; I[idx3 + 2] = oz;
+                    L[idx3] = vx; L[idx3 + 1] = vy; L[idx3 + 2] = vz;
+                    R[e] = heat;
+
+                    const o5 = e * 5;
+                    F[o5] = sx + ox; F[o5 + 1] = sy + oy; F[o5 + 2] = sz + oz;
+                    F[o5 + 3] = dEase; F[o5 + 4] = heat;
+                }
+
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufDyn);
+                gl.bufferSubData(gl.ARRAY_BUFFER, 0, F);
+                if (aPos >= 0) { gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 4, gl.FLOAT, false, 20, 0); }
+                if (aHeat >= 0) { gl.enableVertexAttribArray(aHeat); gl.vertexAttribPointer(aHeat, 1, gl.FLOAT, false, 20, 16); }
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm);
+                if (aNrm >= 0) { gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0); }
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufRnd);
+                if (aRnd >= 0) { gl.enableVertexAttribArray(aRnd); gl.vertexAttribPointer(aRnd, 4, gl.FLOAT, false, 0, 0); }
+
+                gl.uniformMatrix4fv(uPV, false, new Float32Array(UMat));
+                gl.uniformMatrix3fv(uRot, false, new Float32Array(rotBrain));
+                gl.uniform3f(uCam, 0, 0, CAM_Z);
+
+                const ptSz = clamp(W * 0.006, 6.5, 10.5);
+                const projH = canvas.height / (2 * Math.tan(FOV / 2));
+                gl.uniform1f(uSize, (ptSz * dpr * CAM_Z) / projH);
+                gl.uniform1f(uTime, tSec);
+                gl.uniform3f(uTint, curTint[0], curTint[1], curTint[2]);
+                gl.uniform1f(uTintAmt, curTintAmt);
+                gl.uniform1f(uPx, projH);
+                gl.uniform1f(uKeep, (mobile ? 0.2 : 0.13) * mix(1, 0.6, curQuiet));
+                const fadeOut = mix(1, 0.62, smoothstep(mCut + 0.75, mCut + 1.55, scrollProg) * (1 - curReform));
+                gl.uniform1f(uFade, mix(fadeOut, Math.min(fadeOut, 0.30), curQuiet));
+                gl.drawArrays(gl.POINTS, 0, P);
+            };
+            requestAnimationFrame(renderFrame);
+        })();
+
+        /* ==============================================================
+           2. MIND ORB SVG GENERATOR + SCROLL REVEAL + TIMELINE PROGRESS
+           ============================================================== */
+        (function initMindUI() {
+            const orbConfigs = [
+                { id: 'orbStage1', tone: '#FFB627', seed: 3 },
+                { id: 'orbStage2', tone: '#7B5CFA', seed: 9 },
+                { id: 'orbStage3', tone: '#2BD8C8', seed: 17 },
+            ];
+            for (const cfg of orbConfigs) {
+                const el = document.getElementById(cfg.id);
+                if (!el) continue;
+                let s = Math.round(cfg.seed * 9301 + 49297);
+                const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+                const count = 44;
+                let paths = '';
+                for (let i = 0; i < count; i++) {
+                    const y = 1 - (2 * (i + 0.5)) / count;
+                    const rad = Math.sqrt(1 - y * y);
+                    const th = i * 2.39996 + cfg.seed;
+                    const z = Math.sin(th) * rad;
+                    const cx = 50 + Math.cos(th) * rad * 34;
+                    const cy = 50 + y * 34;
+                    const sz = 3.2 + (z + 1) * 1.8;
+                    const op = Math.min(1, 0.45 + (z + 1) * 0.3);
+                    const stroke = i % 5 === 0 ? '#FFFFFF' : cfg.tone;
+                    rnd();
+                    paths += `<path d="M${cx.toFixed(1)},${(cy - sz * 0.6).toFixed(1)} L${(cx + sz * 0.55).toFixed(1)},${(cy + sz * 0.4).toFixed(1)} L${(cx - sz * 0.55).toFixed(1)},${(cy + sz * 0.4).toFixed(1)} Z" fill="none" stroke="${stroke}" stroke-opacity="${op.toFixed(2)}" stroke-width="0.7"/>`;
+                }
+                el.innerHTML = `<svg viewBox="0 0 100 100" style="width:100%;height:100%;overflow:visible;"><defs><radialGradient id="g${cfg.id}"><stop offset="0" stop-color="${cfg.tone}" stop-opacity="0.38"/><stop offset="1" stop-color="${cfg.tone}" stop-opacity="0"/></radialGradient></defs><circle cx="50" cy="50" r="46" fill="url(#g${cfg.id})"/><g class="orb-spin">${paths}</g></svg>`;
+            }
+
+            // Prepare .mf-lit word spans
+            document.querySelectorAll('.mf-lit').forEach((el) => {
+                const words = el.textContent.trim().split(/(\s+)/);
+                el.innerHTML = words.map((w) => /^\s+$/.test(w) ? w : `<span class="w">${w}</span>`).join('');
+            });
+
+            const nav = document.getElementById('topNav');
+            const timeline = document.getElementById('specTimeline');
+
+            const onScroll = () => {
+                const vh = window.innerHeight || 800;
+                if (nav) nav.classList.toggle('scrolled', (window.scrollY || 0) > 24);
+                document.querySelectorAll('.mf-rv:not(.in), .mf-hero-anim:not(.in)').forEach((el) => {
+                    if (el.getBoundingClientRect().top < vh * 0.92) el.classList.add('in');
+                });
+                document.querySelectorAll('.mf-lit').forEach((el) => {
+                    const sec = el.closest('section') || el;
+                    const r = sec.getBoundingClientRect();
+                    const p = Math.max(0, Math.min(1, (vh - r.top) / (vh + r.height)));
+                    const words = el.querySelectorAll('.w');
+                    const onCount = Math.round(((p - 0.16) / 0.46) * words.length);
+                    words.forEach((w, idx) => w.classList.toggle('on', idx < onCount));
+                });
+                if (timeline) {
+                    const r = timeline.getBoundingClientRect();
+                    const p = Math.max(0.06, Math.min(1, (vh - r.top) / (vh + r.height) * 1.1));
+                    timeline.style.setProperty('--p', p.toFixed(3));
+                }
+            };
+            window.addEventListener('scroll', onScroll, { passive: true });
+            onScroll();
+            setTimeout(() => {
+                document.querySelectorAll('.mf-hero-anim, .hero-section .mf-rv').forEach((el) => el.classList.add('in'));
+            }, 80);
+        })();
+
+        function toggleSpecRow(btn) {
+            const card = btn.closest('.mf-ex');
+            if (card) card.classList.toggle('op');
+        }
+
+        // Ping FastAPI Health Badge
+        (async function pingHealth() {
+            const badge = document.getElementById('apiHealthBadge');
+            try {
+                const r = await fetch('/api/health');
+                if (r.ok && badge) {
+                    const d = await r.json();
+                    badge.innerHTML = `<span class="status-dot"></span><span>API v${d.version || '3.0.0'}</span>`;
+                }
+            } catch {
+                if (badge) {
+                    badge.style.borderColor = 'rgba(255,59,92,0.4)';
+                    badge.style.color = '#FF8DA1';
+                    badge.innerHTML = `<span>● API OFFLINE</span>`;
+                }
+            }
+        })();
+
+        /* ==============================================================
+           3. SENTINELTRACE API & CONSOLE LOGIC (100% BACKEND PRESERVED)
+           ============================================================== */
+        let webhookTimer = null;
+        function triggerWebhookAlert(recipientId, sessionId, inlineId) {
+            const msg = `🚨 CRITICAL INCIDENT: Forensic match confirmed for Recipient ${recipientId} | Session ${sessionId}.`;
+            const toast = document.getElementById('webhookToast');
+            const toastBody = document.getElementById('webhookToastBody');
+            if (toast && toastBody) {
+                toastBody.textContent = msg;
+                toast.classList.add('show');
+                clearTimeout(webhookTimer);
+                webhookTimer = setTimeout(() => toast.classList.remove('show'), 7000);
+            }
+            if (inlineId) {
+                const inl = document.getElementById(inlineId);
+                if (inl) {
+                    inl.textContent = msg;
+                    inl.classList.add('visible');
+                }
+            }
+        }
+
+        function dismissWebhookToast() {
+            const toast = document.getElementById('webhookToast');
+            if (toast) toast.classList.remove('show');
+        }
+
+        function switchTab(tabId, btnEl) {
+            document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+            if (btnEl) btnEl.classList.add('active');
+            const panel = document.getElementById(`tab-${tabId}`);
+            if (panel) panel.classList.add('active');
+            if (tabId === 'stress' && !document.getElementById('stressInput').value.trim()) {
+                generateAliceAndBob();
+            }
+        }
+
+        function switchTabById(tabId) {
+            const btn = document.getElementById(`tabBtn-${tabId}`);
+            switchTab(tabId, btn);
+        }
+
+        function jumpToEngineTab(tabId) {
+            switchTabById(tabId);
+            document.getElementById('engine').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        /* ---------------- TAB 1: WATERMARK ---------------- */
+        async function generateWatermark() {
+            const recipient = document.getElementById('wmRecipient').value.trim();
+            const session = document.getElementById('wmSession').value.trim();
+            const text = document.getElementById('wmText').value;
+            if (!recipient || !session || !text.trim()) {
+                alert('Please fill Recipient ID, Session ID, and Confidential Text.');
+                return;
+            }
+            try {
+                const resp = await fetch('/api/watermark', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ recipient_id: recipient, session_id: session, text })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Watermarking failed');
+                document.getElementById('wmOutput').value = data.watermarked_text;
+                const badge = document.getElementById('wmBadge');
+                badge.textContent = `SIGNED · ${data.chunks_embedded || 1} CHUNKS`;
+                badge.className = 'mono-badge teal';
+                document.getElementById('wmInfo').textContent =
+                    `HMAC-SHA256 Signature [${data.signature}] embedded redundantly across ${data.chunks_embedded} sentence boundary checkpoints (0 visible pixels added).`;
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function handlePdfDragOver(e) { e.preventDefault(); document.getElementById('pdfDropZone').classList.add('dragover'); }
+        function handlePdfDragLeave() { document.getElementById('pdfDropZone').classList.remove('dragover'); }
+        function handlePdfDrop(e) {
+            e.preventDefault();
+            document.getElementById('pdfDropZone').classList.remove('dragover');
+            const files = e.dataTransfer?.files;
+            if (files && files.length) {
+                const input = document.getElementById('wmPdfFileInput');
+                input.files = files;
+                document.getElementById('pdfSelectedLabel').textContent = `Selected: ${files[0].name}`;
+            }
+        }
+        function handlePdfFileSelect(e) {
+            const file = e.target.files?.[0];
+            document.getElementById('pdfSelectedLabel').textContent = file ? `Selected: ${file.name}` : 'No PDF chosen — click to browse';
+        }
+
+        async function uploadAndWatermarkPdf() {
+            const file = document.getElementById('wmPdfFileInput').files?.[0];
+            if (!file) { alert('Please select or drag-and-drop a .pdf file first.'); return; }
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('recipient_id', document.getElementById('wmRecipient').value.trim() || 'USR-8492-ALICE');
+            formData.append('session_id', document.getElementById('wmSession').value.trim() || 'SESS-2026');
+            try {
+                const resp = await fetch('/api/watermark-pdf', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'PDF watermarking failed');
+                document.getElementById('wmOutput').value = data.watermarked_text;
+                const badge = document.getElementById('wmBadge');
+                badge.textContent = `PDF EXTRACTED · ${data.chunks_embedded} CHUNKS`;
+                badge.className = 'mono-badge gold';
+                document.getElementById('wmInfo').textContent =
+                    `Processed ${data.pages_processed} page(s) from "${data.filename}" with HMAC [${data.signature}].`;
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function downloadCopyToCopyPdf() {
+            const file = document.getElementById('wmPdfFileInput').files?.[0];
+            if (!file) { alert('Select a .pdf file in the drop zone first to generate an unmodified Copy-to-Copy PDF.'); return; }
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('recipient_id', document.getElementById('wmRecipient').value.trim() || 'USR-8492-ALICE');
+            formData.append('session_id', document.getElementById('wmSession').value.trim() || 'SESS-2026');
+            try {
+                const resp = await fetch('/api/download-watermarked-pdf', { method: 'POST', body: formData });
+                if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Copy-to-Copy PDF download failed'); }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `watermarked_${file.name}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function downloadProtectedPdf() {
+            const recipient = document.getElementById('wmRecipient').value.trim();
+            const session = document.getElementById('wmSession').value.trim();
+            const text = document.getElementById('wmText').value;
+            try {
+                const resp = await fetch('/api/export-watermark-pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ recipient_id: recipient, session_id: session, text })
+                });
+                if (!resp.ok) throw new Error('Export PDF failed');
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `sentineltrace_${recipient.replace(/\W+/g, '_')}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function copyWatermarkedText() {
+            const val = document.getElementById('wmOutput').value;
+            if (!val) { alert('Generate watermarked output first.'); return; }
+            navigator.clipboard.writeText(val);
+            document.getElementById('wmInfo').textContent = 'Copied invisible zero-width watermarked text to clipboard.';
+        }
+
+        function sendToInspector() {
+            const val = document.getElementById('wmOutput').value;
+            if (!val) { alert('Generate watermarked output first.'); return; }
+            document.getElementById('inspectInput').value = val;
+            switchTabById('inspector');
+            runInspector();
+        }
+
+        /* ---------------- TAB 2: INSPECTOR ---------------- */
+        function renderInspectionResult(data) {
+            document.getElementById('inspectAwaiting').style.display = 'none';
+            const badge = document.getElementById('inspRecoveryBadge');
+            const errBox = document.getElementById('inspectErrorBox');
+            const resBox = document.getElementById('inspectResultBox');
+            const inl = document.getElementById('inspectWebhookInline');
+            inl.classList.remove('visible');
+
+            if (data.match_found) {
+                errBox.style.display = 'none';
+                resBox.style.display = 'flex';
+                document.getElementById('resRecipient').textContent = data.recipient_id || '—';
+                document.getElementById('resSession').textContent = data.session_id || '—';
+                document.getElementById('resSig').textContent = data.signature || '—';
+                const totalChunks = data.redundancy_chunks_detected ?? data.chunks_detected ?? 1;
+                const verChunks = data.chunks_verified ?? (data.verified ? 1 : 0);
+                document.getElementById('resChunks').textContent = `${verChunks} verified / ${totalChunks} recovered`;
+
+                const banner = document.getElementById('inspectStatusBanner');
+                const bannerText = document.getElementById('inspectBannerText');
+                if (data.verified) {
+                    badge.textContent = data.recovery_mode || 'HMAC VERIFIED';
+                    badge.className = 'mono-badge teal';
+                    banner.className = 'banner-alert';
+                    bannerText.textContent = `Forensic attribution verified (${data.source || 'Zero-Width Steganography'}).`;
+                    document.getElementById('resVerified').textContent = 'VALID — HMAC-SHA256 SIGNATURE VERIFIED';
+                    triggerWebhookAlert(data.recipient_id, data.session_id, 'inspectWebhookInline');
+                } else {
+                    badge.textContent = 'TAMPERED PAYLOAD';
+                    badge.className = 'mono-badge danger';
+                    banner.className = 'banner-alert danger';
+                    bannerText.textContent = 'Watermark decoded but HMAC signature check failed (possible forgery/tampering).';
+                    document.getElementById('resVerified').textContent = 'INVALID SIGNATURE';
+                }
+            } else {
+                resBox.style.display = 'none';
+                errBox.style.display = 'flex';
+                badge.textContent = 'UNTRACKED TEXT';
+                badge.className = 'mono-badge danger';
+                document.getElementById('inspectErrorMsg').textContent = data.error || 'No embedded zero-width forensic payload detected.';
+            }
+        }
+
+        async function runInspector() {
+            const leaked = document.getElementById('inspectInput').value;
+            if (!leaked.trim()) { alert('Paste text to inspect.'); return; }
+            try {
+                const resp = await fetch('/api/inspect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ leaked_text: leaked })
+                });
+                const data = await resp.json();
+                renderInspectionResult(data);
+            } catch (err) {
+                alert('Inspection request failed: ' + err.message);
+            }
+        }
+
+        async function runPdfInspector() {
+            const file = document.getElementById('pdfUploadInput').files?.[0];
+            if (!file) { alert('Choose a .pdf file to inspect.'); return; }
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const resp = await fetch('/api/inspect-pdf', { method: 'POST', body: formData });
+                const data = await resp.json();
+                renderInspectionResult(data);
+            } catch (err) {
+                alert('PDF inspection failed: ' + err.message);
+            }
+        }
+
+        async function loadSampleSnippet() {
+            const sampleText = 'CONFIDENTIAL — PROJECT HYPERION ACQUISITION BRIEF. Target valuation is capped at $420M pending Board approval. Engineering transition will execute across Q3 under strict NDA protocols.';
+            const resp = await fetch('/api/watermark', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipient_id: 'USR-8492 (Alice)', session_id: 'SESS-2026-Q4', text: sampleText })
+            });
+            const data = await resp.json();
+            document.getElementById('inspectInput').value = data.watermarked_text;
+        }
+
+        async function loadPartialSlice() {
+            await loadSampleSnippet();
+            const full = document.getElementById('inspectInput').value;
+            const parts = full.split('. ');
+            if (parts.length > 1) {
+                document.getElementById('inspectInput').value = parts[1] + '.';
+            }
+        }
+
+        function loadCleanSnippet() {
+            document.getElementById('inspectInput').value = 'This is plain unwatermarked text with zero hidden Unicode characters.';
+        }
+
+        /* ---------------- TAB 3: OFFLINE DRM ENFORCER ---------------- */
+        let activeLeaseId = null, activeLeaseToken = null, activeRsaJwt = null;
+        let activeLeaseDuration = 30, leaseStartMono = performance.now();
+        let simulatedClockOffset = 0, pollingPaused = false, pollCount = 0;
+        let activeQrChallengeCode = null;
+
+        let drmBlockedAttempts = 0;
+
+        function recordBlockedAttempt(reason) {
+            drmBlockedAttempts++;
+            const badge = document.getElementById('drmCopyShieldBadge');
+            const log = document.getElementById('drmShieldLog');
+            if (badge) {
+                badge.textContent = `🛡 BLOCKED (${drmBlockedAttempts}) · ${reason}`;
+                badge.className = 'mono-badge danger';
+            }
+            if (log) {
+                log.style.color = '#FF8DA1';
+                log.textContent = `⚠ DRM SECURITY GUARD: Blocked "${reason}" attempt at ${new Date().toLocaleTimeString()}.`;
+            }
+        }
+
+        (function attachDrmViewportProtection() {
+            const box = document.getElementById('drmViewportContainer');
+            if (box) {
+                for (const evtName of ['copy', 'cut', 'paste', 'selectstart', 'dragstart', 'contextmenu']) {
+                    box.addEventListener(evtName, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        recordBlockedAttempt(evtName.toUpperCase());
+                    });
+                }
+            }
+            window.addEventListener('keydown', (e) => {
+                const drmActive = document.getElementById('tab-drm')?.classList.contains('active');
+                const insideBox = box && (box === document.activeElement || box.contains(document.activeElement));
+                if (!drmActive && !insideBox) return;
+
+                const k = (e.key || '').toLowerCase();
+                const mod = e.ctrlKey || e.metaKey;
+                const isF12 = e.key === 'F12' || e.keyCode === 123;
+                const isInspect = mod && (e.shiftKey || e.altKey) && (k === 'i' || k === 'j' || k === 'c');
+                const isRestricted = mod && (k === 'u' || k === 'c' || k === 'x' || k === 's' || k === 'p');
+                if (isF12 || isInspect || isRestricted) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    recordBlockedAttempt(e.key || 'SHORTCUT');
+                }
+            }, true);
+        })();
+
+        function renderViewportWatermark() {
+            const grid = document.getElementById('viewportWatermarkGrid');
+            if (!grid) return;
+            const userIdentity = authedUser?.email || document.getElementById('wmRecipient')?.value || 'ALICE SMITH (USR-8492)';
+            const session = document.getElementById('wmSession')?.value || activeLeaseId || 'SESS-2026-Q4';
+            const ts = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+            const stamp = `CONFIDENTIAL • ACCESSED BY ${userIdentity} • ${session} • ${ts}`;
+            let html = '';
+            for (let i = 0; i < 12; i++) html += `<div>${stamp}</div>`;
+            grid.innerHTML = html;
+        }
+
+        function buildPseudoQrSvg(seedStr) {
+            let h = 0;
+            for (let i = 0; i < seedStr.length; i++) h = (h * 31 + seedStr.charCodeAt(i)) | 0;
+            let cells = '';
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) {
+                    const corner = (r < 3 && c < 3) || (r < 3 && c > 5) || (r > 5 && c < 3);
+                    const on = corner || (((h >> ((r * 9 + c) % 24)) ^ (r * 7 + c * 13)) & 1);
+                    if (on) cells += `<rect x="${c * 6}" y="${r * 6}" width="5.5" height="5.5" fill="#0B0A10"/>`;
+                }
+            }
+            return `<svg width="54" height="54" viewBox="0 0 54 54">${cells}</svg>`;
+        }
+
+        async function issueSignedLease(durationSeconds) {
+            activeLeaseDuration = durationSeconds;
+            simulatedClockOffset = 0;
+            leaseStartMono = performance.now();
+            document.getElementById('qrRenewalBox').classList.remove('visible');
+            try {
+                const resp = await fetch('/api/issue-lease', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ duration_seconds: durationSeconds })
+                });
+                const data = await resp.json();
+                activeLeaseId = data.lease_id;
+                activeLeaseToken = data.lease_token;
+                activeRsaJwt = data.rsa_jwt;
+                document.getElementById('drmDeviceHwid').textContent = data.device_hwid || 'HWID-84F9-KEY';
+                document.getElementById('drmRamKeyPreview').textContent = data.ram_key_preview || 'AES-256 RAM';
+                document.getElementById('viewportDocText').textContent = data.decrypted_viewport_text || 'CONFIDENTIAL OFFLINE LEASE CONTENT DECRYPTED IN RAM.';
+                document.getElementById('viewportLockedOverlay').classList.remove('locked');
+                document.getElementById('resRsaSig').textContent = `RS256 JWT: ${(data.rsa_jwt || '').slice(0, 72)}...`;
+                renderViewportWatermark();
+                validateLeaseNow();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function revokeAccessInstantly() {
+            try {
+                const resp = await fetch('/api/revoke-lease', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lease_id: activeLeaseId, lease_token: activeLeaseToken })
+                });
+                const data = await resp.json();
+                applyDrmUiState(data);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function challengeQrRenewal() {
+            const mins = Number(document.getElementById('leaseSlider').value || 1);
+            try {
+                const resp = await fetch('/api/challenge-qr-renewal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lease_id: activeLeaseId, duration_seconds: mins * 60 })
+                });
+                const data = await resp.json();
+                activeQrChallengeCode = data.challenge_code;
+                document.getElementById('qrCodeLabel').textContent = `CODE: ${data.challenge_code}`;
+                document.getElementById('qrSvgHolder').innerHTML = buildPseudoQrSvg(data.challenge_code || 'LEAKLENS');
+                document.getElementById('qrRenewalBox').classList.add('visible');
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function completeQrRenewal() {
+            const mins = Number(document.getElementById('leaseSlider').value || 1);
+            try {
+                const resp = await fetch('/api/complete-qr-renewal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ challenge_code: activeQrChallengeCode, duration_seconds: activeLeaseDuration || mins * 60 })
+                });
+                const data = await resp.json();
+                activeLeaseId = data.lease_id;
+                activeLeaseToken = data.lease_token;
+                activeRsaJwt = data.rsa_jwt;
+                leaseStartMono = performance.now();
+                simulatedClockOffset = 0;
+                document.getElementById('qrRenewalBox').classList.remove('visible');
+                document.getElementById('drmRamKeyPreview').textContent = data.ram_key_preview || 'AES-256 RAM';
+                document.getElementById('viewportDocText').textContent = data.decrypted_viewport_text || 'CONFIDENTIAL OFFLINE LEASE CONTENT DECRYPTED IN RAM.';
+                document.getElementById('viewportLockedOverlay').classList.remove('locked');
+                validateLeaseNow();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function updateLeaseDuration(mins) {
+            document.getElementById('sliderVal').textContent = `${mins} min`;
+            issueSignedLease(Number(mins) * 60);
+        }
+
+        function setQuickExpiry(sec) {
+            issueSignedLease(sec);
+        }
+
+        function simulateClockTamper() {
+            simulatedClockOffset -= 3600;
+            validateLeaseNow();
+        }
+
+        function togglePolling() {
+            pollingPaused = !pollingPaused;
+            document.getElementById('pollToggleBtn').textContent = pollingPaused ? 'Resume Poll' : 'Pause Poll';
+        }
+
+        function applyDrmUiState(data) {
+            const rem = Math.max(0, data.remaining_seconds ?? 0);
+            const mins = String(Math.floor(rem / 60)).padStart(2, '0');
+            const secs = String(rem % 60).padStart(2, '0');
+            document.getElementById('timerDisplay').textContent = `00:${mins}:${secs}`;
+
+            const pct = activeLeaseDuration > 0 ? Math.min(100, Math.round((rem / activeLeaseDuration) * 100)) : 0;
+            document.getElementById('drmProgressBar').style.width = `${data.access_allowed ? pct : 0}%`;
+
+            const box = document.getElementById('drmStatusBox');
+            const msg = document.getElementById('drmStatusMsg');
+            box.className = `drm-countdown-card ${data.access_allowed ? 'allowed' : 'revoked'}`;
+            msg.style.color = data.access_allowed ? 'var(--teal)' : '#FF6B84';
+            msg.textContent = data.status_message || (data.access_allowed ? 'ACCESS GRANTED' : 'ACCESS REVOKED');
+
+            document.getElementById('resMonoElapsed').textContent = `${(data.monotonic_elapsed_seconds ?? 0).toFixed(1)}s`;
+            document.getElementById('resTokenStatus').textContent =
+                data.clock_tamper_detected ? '⚠ CLOCK TAMPER DETECTED' :
+                (data.rsa_verified && data.token_verified ? 'RS256 + HMAC VALID' : 'UNVERIFIED / EXPIRED');
+            document.getElementById('resShredder').textContent = data.ram_wiped ? 'WIPED TO 0x00' : 'KEY ACTIVE IN RAM';
+            if (data.ram_key_preview) document.getElementById('drmRamKeyPreview').textContent = data.ram_key_preview;
+
+            const overlay = document.getElementById('viewportLockedOverlay');
+            const lockTitle = document.getElementById('viewportLockTitle');
+            const cipherPrev = document.getElementById('viewportCipherPreview');
+            renderViewportWatermark();
+            if (!data.access_allowed || data.ram_wiped) {
+                overlay.classList.add('locked');
+                lockTitle.textContent = data.clock_tamper_detected
+                    ? 'CLOCK TAMPER BLOCKED — RAM KEY SHREDDED'
+                    : 'ENCRYPTED LOCKDOWN — RAM KEY ZERO-FILLED';
+                if (cipherPrev) {
+                    cipherPrev.textContent = data.ciphertext_preview
+                        ? `RAM wiped to 0x00. Encrypted payload state: ${data.ciphertext_preview}`
+                        : 'In-memory AES-256-GCM decryption key overwritten with 0x00 bytes. No plaintext cache exists on disk.';
+                }
+                document.getElementById('viewportDocText').textContent = '[WIPED]';
+            } else {
+                overlay.classList.remove('locked');
+                if (data.decrypted_viewport_text) document.getElementById('viewportDocText').textContent = data.decrypted_viewport_text;
+            }
+        }
+
+        async function validateLeaseNow() {
+            if (!activeLeaseToken) return;
+            const clientElapsed = (performance.now() - leaseStartMono) / 1000;
+            try {
+                const resp = await fetch('/api/validate-lease', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lease_token: activeLeaseToken,
+                        rsa_jwt: activeRsaJwt,
+                        client_elapsed_seconds: clientElapsed,
+                        simulated_clock_offset_seconds: simulatedClockOffset
+                    })
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    pollCount++;
+                    document.getElementById('pollCounter').textContent = `POLLS: ${pollCount}`;
+                    applyDrmUiState(data);
+                }
+            } catch {}
+        }
+
+        setInterval(() => { if (!pollingPaused) validateLeaseNow(); }, 1000);
+        issueSignedLease(30);
+
+        /* ---------------- TAB 4: JUDGE STRESS TEST ---------------- */
+        let aliceWatermarked = '', bobWatermarked = '';
+        async function handleRegenerate() {
+            try {
+                const response = await fetch('/api/regenerate-demo-copies', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    aliceWatermarked = data.alice.watermarked_text;
+                    bobWatermarked = data.bob.watermarked_text;
+                    document.getElementById('aliceLabel').textContent = `Copy A · ${data.alice.recipient_id}`;
+                    document.getElementById('bobLabel').textContent = `Copy B · ${data.bob.recipient_id}`;
+                    document.getElementById('aliceCopyPreview').textContent = aliceWatermarked;
+                    document.getElementById('bobCopyPreview').textContent = bobWatermarked;
+                    loadTargetCopy('alice');
+                }
+            } catch (error) {
+                console.error('Regenerate failed:', error);
+            }
+        }
+        const generateAliceAndBob = handleRegenerate;
+
+        function loadTargetCopy(who) {
+            document.getElementById('cardAlice').classList.toggle('selected', who === 'alice');
+            document.getElementById('cardBob').classList.toggle('selected', who === 'bob');
+            document.getElementById('stressInput').value = who === 'alice' ? aliceWatermarked : bobWatermarked;
+        }
+
+        function stressDeleteSentence() {
+            const el = document.getElementById('stressInput');
+            const parts = el.value.split('. ');
+            if (parts.length > 1) el.value = parts.slice(1).join('. ');
+        }
+
+        function stressMutateWords() {
+            const el = document.getElementById('stressInput');
+            el.value = el.value
+                .replace('Project SentinelTrace', 'Project Titan')
+                .replace('Q4 target metrics', 'Q1 public numbers')
+                .replace('remain internal', 'leak externally');
+        }
+
+        function stressKeepOneSentence() {
+            const el = document.getElementById('stressInput');
+            const parts = el.value.split('. ');
+            if (parts.length > 1) el.value = parts[parts.length - 1];
+        }
+
+        async function runStressTestAnalysis() {
+            const leaked = document.getElementById('stressInput').value;
+            if (!leaked.trim()) return;
+            try {
+                const resp = await fetch('/api/inspect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ leaked_text: leaked })
+                });
+                const data = await resp.json();
+                document.getElementById('stressAwaiting').style.display = 'none';
+                const errBox = document.getElementById('stressErrorBox');
+                const resBox = document.getElementById('stressResultBox');
+                const badge = document.getElementById('stressBadge');
+                const inl = document.getElementById('stressWebhookInline');
+                inl.classList.remove('visible');
+
+                if (data.match_found) {
+                    errBox.style.display = 'none';
+                    resBox.style.display = 'flex';
+                    badge.textContent = data.verified ? 'ATTRIBUTION SURVIVED' : 'HMAC FAILED';
+                    badge.className = data.verified ? 'mono-badge teal' : 'mono-badge danger';
+                    document.getElementById('stressRecipient').textContent = data.recipient_id;
+                    document.getElementById('stressSession').textContent = data.session_id;
+                    const tot = data.redundancy_chunks_detected ?? data.chunks_detected ?? 1;
+                    document.getElementById('stressChunks').textContent = `${tot} surviving chunk(s)`;
+                    document.getElementById('stressVerified').textContent = data.verified ? 'VALID HMAC' : 'INVALID';
+                    document.getElementById('stressBannerText').textContent = `Identified leaker ${data.recipient_id} from modified snippet!`;
+                    if (data.verified) triggerWebhookAlert(data.recipient_id, data.session_id, 'stressWebhookInline');
+                } else {
+                    resBox.style.display = 'none';
+                    errBox.style.display = 'flex';
+                    badge.textContent = 'PAYLOAD LOST';
+                    badge.className = 'mono-badge danger';
+                    document.getElementById('stressErrorMsg').textContent = data.error || 'No watermark chunks survived.';
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        /* ---------------- ROOT AUTH GATE & GOOGLE SESSION FLOW ---------------- */
+        const FRAMER_LOGIN_URL = 'https://linklenslogin.framer.website/';
+        const DEFAULT_GOOGLE_CLIENT_ID = '243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com';
+        const storedClientId = localStorage.getItem('google_client_id');
+        let GOOGLE_CLIENT_ID = (storedClientId && !storedClientId.startsWith('YOUR_GOOGLE_CLIENT_ID')) ? storedClientId : DEFAULT_GOOGLE_CLIENT_ID;
+        let authedUser = null;
+
+        function switchLoginMode(mode) {
+            const sub = document.getElementById('loginSubtitle');
+            const sBtn = document.getElementById('modeSignInBtn');
+            const rBtn = document.getElementById('modeRegisterBtn');
+            if (!sub || !sBtn || !rBtn) return;
+            if (mode === 'register') {
+                sBtn.classList.remove('active');
+                rBtn.classList.add('active');
+                sub.textContent = 'Register with your Gmail identity to bind forensic attribution keys and create your SentinelTrace workspace session.';
+            } else {
+                rBtn.classList.remove('active');
+                sBtn.classList.add('active');
+                sub.textContent = 'Sign in with your Google account to unlock invisible watermarking, forensic leak inspection, and offline RAM DRM controls.';
+            }
+        }
+
+        function unlockMainWebsiteView(user) {
+            authedUser = user;
+            const loader = document.getElementById('loadingScreen');
+            const loginView = document.getElementById('loginScreen');
+            const topNav = document.getElementById('topNav');
+            const mainView = document.getElementById('mainWebsiteView');
+            if (loader) loader.style.display = 'none';
+            if (loginView) loginView.style.display = 'none';
+            if (topNav) topNav.style.display = 'flex';
+            if (mainView) mainView.style.display = 'block';
+
+            setAuthenticatedUserUi(user);
+            const navEmail = document.getElementById('navUserEmail');
+            if (navEmail && user?.email) {
+                navEmail.textContent = user.email;
+                navEmail.style.display = 'inline-flex';
+            }
+
+            // Ensure hero & visible reveal animations activate right when view unlocks
+            document.querySelectorAll('.mf-hero-anim, .hero-section .mf-rv').forEach((el) => el.classList.add('in'));
+            window.dispatchEvent(new Event('scroll'));
+        }
+
+        function lockToLoginView(errText) {
+            authedUser = null;
+            const loader = document.getElementById('loadingScreen');
+            const loginView = document.getElementById('loginScreen');
+            const topNav = document.getElementById('topNav');
+            const mainView = document.getElementById('mainWebsiteView');
+            if (loader) loader.style.display = 'none';
+            if (topNav) topNav.style.display = 'none';
+            if (mainView) mainView.style.display = 'none';
+            if (loginView) loginView.style.display = 'flex';
+            const errBox = document.getElementById('loginErrorMsg');
+            if (errBox) {
+                errBox.textContent = errText || '';
+                errBox.style.display = errText ? 'block' : 'none';
+            }
+            initGoogleIdentity();
+        }
+
+        function isRouteGuardActive() {
+            return new URLSearchParams(window.location.search).get('auth_guard') === '1' ||
+                   localStorage.getItem('leaklens_auth_guard') === '1';
+        }
+
+        function updateAuthGuardButtonUi() {
+            const btn = document.getElementById('authGuardToggleBtn');
+            if (!btn) return;
+            const on = isRouteGuardActive();
+            btn.textContent = on ? 'Route Guard: ON' : 'Route Guard: OFF';
+            btn.className = on ? 'lt-pill sm teal' : 'lt-pill sm secondary';
+        }
+
+        function toggleAuthGuard() {
+            const next = !isRouteGuardActive();
+            localStorage.setItem('leaklens_auth_guard', next ? '1' : '0');
+            updateAuthGuardButtonUi();
+        }
+
+        function setAuthenticatedUserUi(user) {
+            authedUser = user;
+            const sum = document.getElementById('authUserSummary');
+            const prof = document.getElementById('authUserProfile');
+            const ctrl = document.getElementById('authControlsRight');
+            if (user) {
+                if (sum) sum.style.display = 'none';
+                if (ctrl) ctrl.style.display = 'none';
+                if (prof) prof.style.display = 'flex';
+                document.getElementById('authName').textContent = user.name || user.email;
+                document.getElementById('authEmail').textContent = user.email;
+                const av = document.getElementById('authAvatar');
+                if (user.picture) {
+                    av.src = user.picture;
+                    av.style.display = 'block';
+                } else {
+                    av.style.display = 'none';
+                }
+                const wmRec = document.getElementById('wmRecipient');
+                if (wmRec && user.email) wmRec.value = user.email;
+            } else {
+                if (prof) prof.style.display = 'none';
+                if (sum) sum.style.display = 'flex';
+                if (ctrl) ctrl.style.display = 'flex';
+            }
+        }
+
+        function useAuthedEmailAsRecipient() {
+            if (!authedUser) return;
+            const wmRec = document.getElementById('wmRecipient');
+            if (wmRec) wmRec.value = `${authedUser.name} (${authedUser.email})`;
+        }
+
+        function buildFramerLoginRedirect() {
+            const sep = FRAMER_LOGIN_URL.includes('?') ? '&' : '?';
+            const returnDest = `${window.location.origin}${window.location.pathname}`;
+            return `${FRAMER_LOGIN_URL}${sep}redirect=${encodeURIComponent(returnDest)}`;
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user_email');
+            localStorage.removeItem('user_name');
+            localStorage.removeItem('user_picture');
+            window.location.href = buildFramerLoginRedirect();
+        }
+        const logoutGoogleSession = handleLogout;
+
+        function toggleGoogleClientCfg() {
+            const box = document.getElementById('googleClientCfgBox');
+            const inp = document.getElementById('googleClientIdInput');
+            const open = box.style.display !== 'flex';
+            box.style.display = open ? 'flex' : 'none';
+            if (open && !GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE_CLIENT_ID')) {
+                inp.value = GOOGLE_CLIENT_ID;
+            }
+        }
+
+        function saveGoogleClientId() {
+            const val = (document.getElementById('googleClientIdInput').value || '').trim();
+            if (!val) return;
+            GOOGLE_CLIENT_ID = val;
+            localStorage.setItem('google_client_id', val);
+            document.getElementById('googleClientCfgBox').style.display = 'none';
+            initGoogleIdentity();
+        }
+
+        async function handleGoogleCallback(response) {
+            const errBox = document.getElementById('loginErrorMsg');
+            if (errBox) errBox.style.display = 'none';
+            try {
+                const res = await fetch('/api/auth/google', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: response.credential })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === 'success') {
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('user_email', data.user.email);
+                    localStorage.setItem('user_name', data.user.name);
+                    if (data.user.picture) localStorage.setItem('user_picture', data.user.picture);
+                    unlockMainWebsiteView(data.user);
+                } else {
+                    const msg = data.detail || 'Login failed! Please try again.';
+                    lockToLoginView(msg);
+                }
+            } catch (err) {
+                lockToLoginView('Could not reach backend authentication server.');
+            }
+        }
+        const handleGoogleResponse = handleGoogleCallback;
+
+        function initGoogleIdentity() {
+            const loginTarget = document.getElementById('google-login-btn');
+            const barTarget = document.getElementById('google-signin-btn');
+            if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE_CLIENT_ID')) return;
+            if (window.google && window.google.accounts && window.google.accounts.id) {
+                window.google.accounts.id.initialize({
+                    client_id: GOOGLE_CLIENT_ID,
+                    callback: handleGoogleCallback
+                });
+                if (loginTarget && !authedUser) {
+                    loginTarget.innerHTML = '';
+                    window.google.accounts.id.renderButton(loginTarget, {
+                        theme: 'filled_blue',
+                        size: 'large',
+                        shape: 'pill',
+                        width: 280,
+                        text: 'continue_with'
+                    });
+                }
+                if (barTarget && !authedUser) {
+                    barTarget.innerHTML = '';
+                    window.google.accounts.id.renderButton(barTarget, {
+                        theme: 'filled_black',
+                        size: 'medium',
+                        shape: 'pill',
+                        text: 'continue_with'
+                    });
+                }
+            }
+        }
+
+        (async function initAuth() {
+            updateAuthGuardButtonUi();
+
+            // A. Check if returning from https://linklenslogin.framer.website/ with ?token=... in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const tokenFromUrl = urlParams.get('token');
+            const emailFromUrl = urlParams.get('email');
+
+            // Fallback hash support too (#access_token=...)
+            const hash = window.location.hash || '';
+            const hashMatch = hash.match(/access_token=([^&]+)/);
+            const handoffToken = tokenFromUrl || (hashMatch && hashMatch[1] ? decodeURIComponent(hashMatch[1]) : null);
+
+            let token = localStorage.getItem('access_token');
+
+            if (handoffToken) {
+                token = handoffToken;
+                localStorage.setItem('access_token', token);
+                if (emailFromUrl) localStorage.setItem('user_email', emailFromUrl);
+                // Clean query params from address bar cleanly
+                try {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } catch {}
+            }
+
+            // B. If no token exists in localStorage, immediately redirect to https://linklenslogin.framer.website/
+            if (!token) {
+                window.location.href = buildFramerLoginRedirect();
+                return;
+            }
+
+            // C. Verify token validity with FastAPI GET /api/auth/me
+            try {
+                const res = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.status === 'authenticated' && data.user) {
+                    localStorage.setItem('user_email', data.user.email);
+                    localStorage.setItem('user_name', data.user.name || data.user.email);
+                    // Bind authenticated user.email automatically to Watermarking Engine recipient ID
+                    const wmRec = document.getElementById('wmRecipient');
+                    if (wmRec && data.user.email) wmRec.value = data.user.email;
+                    unlockMainWebsiteView(data.user);
+                    return;
+                }
+            } catch (err) {
+                console.error('Verification failed:', err);
+            }
+
+            // Invalid/expired token -> clear & redirect to Framer login
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user_email');
+            localStorage.removeItem('user_name');
+            localStorage.removeItem('user_picture');
+            window.location.href = buildFramerLoginRedirect();
+        })();
+    </script>
+</body>
+</html>

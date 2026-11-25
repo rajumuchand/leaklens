@@ -1,0 +1,19 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments & env secrets
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Runtime logs
+*.log
+fastapi.log
+tunnel.log
+
+# macOS metadata
+.DS_Store
