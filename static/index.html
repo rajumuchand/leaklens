@@ -3151,8 +3151,8 @@
         function inspectPdfBytesClientSide(arrayBuffer) {
             const rawLatin = new TextDecoder('latin1').decode(arrayBuffer);
             const rawUtf8 = new TextDecoder('utf-8', { fatal: false }).decode(arrayBuffer);
-            const proofMetaMatch = rawLatin.match(/\/SentinelTraceProof\s*\(([^)]+)\)/);
-            const proofTagMatches = [...rawLatin.matchAll(/SENTINELTRACE_PROOF:([^|\n\r)\\]+)\|([^|\n\r)\\]+)\|([a-f0-9]{8,16})/g)];
+            const proofMetaMatch = rawLatin.match(/\/SentinelTraceProof\s*\(((?:\\.|[^)])+)\)/);
+            const proofTagMatches = [...rawLatin.matchAll(/SENTINELTRACE_PROOF:((?:\\.|[^|\n\r)])+)\|((?:\\.|[^|\n\r)])+)\|([a-f0-9]{8,16})/g)];
             if (proofTagMatches.length > 0) {
                 const chosen = proofTagMatches[proofTagMatches.length - 1];
                 const recipient_id = chosen[1].replace(/\\([()\\])/g, '$1');
@@ -3492,10 +3492,16 @@
             }
         }
 
+        function splitWatermarkSentences(text) {
+            const byLine = String(text || '').split(/\n+/).filter(Boolean);
+            if (byLine.length > 1) return byLine;
+            return String(text || '').split(/(?<=[.!?][\u200b\u200c\u200d]*)\s+/).filter(Boolean);
+        }
+
         async function loadPartialSlice() {
             await loadSampleSnippet();
             const full = document.getElementById('inspectInput').value;
-            const parts = full.split(/(?<=\.)\s+/).filter(Boolean);
+            const parts = splitWatermarkSentences(full);
             if (parts.length > 1) {
                 document.getElementById('inspectInput').value = parts[1];
             }
@@ -3842,13 +3848,16 @@
 
         function stressDeleteSentence() {
             const el = document.getElementById('stressInput');
-            const parts = el.value.split('. ');
-            if (parts.length > 1) el.value = parts.slice(1).join('. ');
+            const parts = splitWatermarkSentences(el.value);
+            if (parts.length > 1) el.value = parts.slice(1).join('\n');
         }
 
         function stressMutateWords() {
             const el = document.getElementById('stressInput');
             el.value = el.value
+                .replace('Project Helios', 'Project Titan')
+                .replace('$142M', '$185M [EDITED]')
+                .replace('Monday market open', 'Tuesday public release')
                 .replace('Project SentinelTrace', 'Project Titan')
                 .replace('Q4 target metrics', 'Q1 public numbers')
                 .replace('remain internal', 'leak externally');
@@ -3856,7 +3865,7 @@
 
         function stressKeepOneSentence() {
             const el = document.getElementById('stressInput');
-            const parts = el.value.split('. ');
+            const parts = splitWatermarkSentences(el.value);
             if (parts.length > 1) el.value = parts[parts.length - 1];
         }
 

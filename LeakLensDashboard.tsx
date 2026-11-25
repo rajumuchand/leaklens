@@ -245,7 +245,7 @@ function buildClientSidePdfBlob(text: string, recipientId: string, sessionId: st
 function inspectPdfBytesClientSide(arrayBuffer: ArrayBuffer): InspectResponse {
     const rawLatin = new TextDecoder("latin1").decode(arrayBuffer)
     const rawUtf8 = new TextDecoder("utf-8", { fatal: false }).decode(arrayBuffer)
-    const proofTagMatches = [...rawLatin.matchAll(/SENTINELTRACE_PROOF:([^|\n\r)\\]+)\|([^|\n\r)\\]+)\|([a-f0-9]{8,16})/g)]
+    const proofTagMatches = [...rawLatin.matchAll(/SENTINELTRACE_PROOF:((?:\\.|[^|\n\r)])+)\|((?:\\.|[^|\n\r)])+)\|([a-f0-9]{8,16})/g)]
     if (proofTagMatches.length > 0) {
         const chosen = proofTagMatches[proofTagMatches.length - 1]
         const recipient_id = chosen[1].replace(/\\([()\\])/g, "$1")
@@ -264,7 +264,7 @@ function inspectPdfBytesClientSide(arrayBuffer: ArrayBuffer): InspectResponse {
             recovery_mode: "PDF STREAM VERIFIED",
         }
     }
-    const proofMetaMatch = rawLatin.match(/\/SentinelTraceProof\s*\(([^)]+)\)/)
+    const proofMetaMatch = rawLatin.match(/\/SentinelTraceProof\s*\(((?:\\.|[^)])+)\)/)
     if (proofMetaMatch) {
         const parts = proofMetaMatch[1].replace(/\\([()\\])/g, "$1").split("|")
         if (parts.length >= 3) {
