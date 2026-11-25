@@ -16,7 +16,7 @@ export interface AuthGuardUser {
 }
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website/"
-const BACKEND_URL = "https://optimal-symptoms-letters-modem.trycloudflare.com"
+const BACKEND_URL = "https://pretty-rabbits-stand.loca.lt"
 
 export default function FramerAuthGuard(props: {
     apiUrl?: string
@@ -85,6 +85,7 @@ export default function FramerAuthGuard(props: {
             Authorization: `Bearer ${token}`,
         }
         if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         fetch(`${baseUrl}/api/auth/me`, { headers })
             .then((res) => res.json().then((data) => ({ ok: res.ok, data })))

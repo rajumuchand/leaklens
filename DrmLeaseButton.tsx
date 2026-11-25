@@ -22,6 +22,13 @@ interface LeaseResponse {
     status_message: string
 }
 
+const buildTunnelHeaders = (baseUrl: string, extra: Record<string, string> = {}) => {
+    const headers: Record<string, string> = { ...extra }
+    if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+    if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
+    return headers
+}
+
 export default function DrmLeaseButton(props: {
     apiUrl?: string
     leaseSeconds?: number
@@ -31,7 +38,7 @@ export default function DrmLeaseButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        apiUrl = "https://pretty-rabbits-stand.loca.lt",
         leaseSeconds = 30,
         buttonLabel = "Reset / Renew Lease",
         autoPoll = true,
@@ -50,8 +57,7 @@ export default function DrmLeaseButton(props: {
 
     const issueSignedLease = React.useCallback(async () => {
         const baseUrl = apiUrl.replace(/\/+$/, "")
-        const headers: Record<string, string> = { "Content-Type": "application/json" }
-        if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        const headers = buildTunnelHeaders(baseUrl, { "Content-Type": "application/json" })
 
         setSimClockOffset(0)
         const nowMono = typeof performance !== "undefined" ? performance.now() : Date.now()
@@ -81,12 +87,7 @@ export default function DrmLeaseButton(props: {
 
     const validateOnce = React.useCallback(async () => {
         const baseUrl = apiUrl.replace(/\/+$/, "")
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-        }
-        if (baseUrl.includes("ngrok")) {
-            headers["ngrok-skip-browser-warning"] = "true"
-        }
+        const headers = buildTunnelHeaders(baseUrl, { "Content-Type": "application/json" })
 
         const nowMono = typeof performance !== "undefined" ? performance.now() : Date.now()
         const clientElapsed = (nowMono - leaseStartMono) / 1000
@@ -117,7 +118,7 @@ export default function DrmLeaseButton(props: {
         try {
             const resp = await fetch(`${baseUrl}/api/revoke-lease`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: buildTunnelHeaders(baseUrl, { "Content-Type": "application/json" }),
                 body: JSON.stringify({ lease_id: leaseId, lease_token: leaseToken }),
             })
             if (resp.ok) {
@@ -259,7 +260,7 @@ addPropertyControls(DrmLeaseButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        defaultValue: "https://pretty-rabbits-stand.loca.lt",
     },
     leaseSeconds: {
         type: ControlType.Number,

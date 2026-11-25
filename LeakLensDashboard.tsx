@@ -52,7 +52,7 @@ interface LeaseResponse {
 }
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website/"
-const BACKEND_URL = "https://optimal-symptoms-letters-modem.trycloudflare.com"
+const BACKEND_URL = "https://pretty-rabbits-stand.loca.lt"
 
 export default function LeakLensDashboard(props: {
     apiUrl?: string
@@ -91,9 +91,25 @@ export default function LeakLensDashboard(props: {
             if (normalizedBackendUrl.includes("ngrok")) {
                 headers["ngrok-skip-browser-warning"] = "true"
             }
+            if (normalizedBackendUrl.includes("loca.lt")) {
+                headers["bypass-tunnel-reminder"] = "true"
+            }
             return headers
         },
         [normalizedBackendUrl]
+    )
+    const apiFetch = React.useCallback(
+        (path: string, options: RequestInit = {}) => {
+            const extraHeaders: Record<string, string> = {}
+            if (options.headers && typeof options.headers === "object" && !Array.isArray(options.headers)) {
+                Object.assign(extraHeaders, options.headers)
+            }
+            return fetch(`${normalizedBackendUrl}${path}`, {
+                ...options,
+                headers: buildApiHeaders(extraHeaders),
+            })
+        },
+        [normalizedBackendUrl, buildApiHeaders]
     )
     const buildFramerLoginUrl = React.useCallback(() => {
         const target = loginUrl || FRAMER_LOGIN_URL
@@ -179,7 +195,7 @@ export default function LeakLensDashboard(props: {
         setLeaseStartMono(typeof performance !== "undefined" ? performance.now() : Date.now())
         setPermissionEndTs(Date.now() / 1000 + durationSec)
         try {
-            const resp = await fetch(`${currentApiUrl}/api/issue-lease`, {
+            const resp = await apiFetch("/api/issue-lease", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ duration_seconds: Math.max(1, Math.round(durationSec)), recipient_id: recipientId }),
@@ -208,7 +224,7 @@ export default function LeakLensDashboard(props: {
 
     const handleRevokeInstantly = async () => {
         try {
-            const resp = await fetch(`${currentApiUrl}/api/revoke-lease`, {
+            const resp = await apiFetch("/api/revoke-lease", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ lease_id: leaseId, lease_token: leaseToken }),
@@ -232,7 +248,7 @@ export default function LeakLensDashboard(props: {
 
     const handleChallengeQrRenewal = async () => {
         try {
-            const resp = await fetch(`${currentApiUrl}/api/challenge-qr-renewal`, {
+            const resp = await apiFetch("/api/challenge-qr-renewal", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ lease_id: leaseId, duration_seconds: leaseMinutes * 60 }),
@@ -253,7 +269,7 @@ export default function LeakLensDashboard(props: {
         setLeaseDurationSec(dur)
         setLeaseStartMono(typeof performance !== "undefined" ? performance.now() : Date.now())
         try {
-            const resp = await fetch(`${currentApiUrl}/api/complete-qr-renewal`, {
+            const resp = await apiFetch("/api/complete-qr-renewal", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ challenge_code: qrChallengeCode, duration_seconds: dur }),
@@ -292,7 +308,7 @@ export default function LeakLensDashboard(props: {
         setIsWatermarking(true)
         setWatermarkError(null)
         try {
-            const resp = await fetch(`${currentApiUrl}/api/watermark`, {
+            const resp = await apiFetch("/api/watermark", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -330,7 +346,7 @@ export default function LeakLensDashboard(props: {
         formData.append("session_id", sessionId)
 
         try {
-            const resp = await fetch(`${currentApiUrl}/api/watermark-pdf`, {
+            const resp = await apiFetch("/api/watermark-pdf", {
                 method: "POST",
                 body: formData,
             })
@@ -361,7 +377,7 @@ export default function LeakLensDashboard(props: {
         formData.append("recipient_id", recipientId)
         formData.append("session_id", sessionId)
         try {
-            const resp = await fetch(`${currentApiUrl}/api/download-watermarked-pdf`, {
+            const resp = await apiFetch("/api/download-watermarked-pdf", {
                 method: "POST",
                 body: formData,
             })
@@ -386,7 +402,7 @@ export default function LeakLensDashboard(props: {
     const handleDownloadPdf = async () => {
         setWatermarkError(null)
         try {
-            const resp = await fetch(`${currentApiUrl}/api/export-watermark-pdf`, {
+            const resp = await apiFetch("/api/export-watermark-pdf", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -415,7 +431,7 @@ export default function LeakLensDashboard(props: {
         setIsInspecting(true)
         setInspectError(null)
         try {
-            const resp = await fetch(`${currentApiUrl}/api/inspect`, {
+            const resp = await apiFetch("/api/inspect", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -447,7 +463,7 @@ export default function LeakLensDashboard(props: {
         async (response: { credential?: string }) => {
             if (!response?.credential) return
             try {
-                const resp = await fetch(`${currentApiUrl}/api/auth/google`, {
+                const resp = await apiFetch("/api/auth/google", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ token: response.credential }),
@@ -549,7 +565,7 @@ export default function LeakLensDashboard(props: {
 
     const handleRegenerate = React.useCallback(async () => {
         try {
-            const response = await fetch(`${currentApiUrl}/api/regenerate-demo-copies`, {
+            const response = await apiFetch("/api/regenerate-demo-copies", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
             })
@@ -575,7 +591,7 @@ export default function LeakLensDashboard(props: {
         if (!stressInput.trim()) return
         setIsStressTesting(true)
         try {
-            const resp = await fetch(`${currentApiUrl}/api/inspect`, {
+            const resp = await apiFetch("/api/inspect", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ leaked_text: stressInput }),
@@ -603,7 +619,7 @@ export default function LeakLensDashboard(props: {
         const formData = new FormData()
         formData.append("file", file)
         try {
-            const resp = await fetch(`${currentApiUrl}/api/inspect-pdf`, {
+            const resp = await apiFetch("/api/inspect-pdf", {
                 method: "POST",
                 body: formData,
             })
@@ -647,7 +663,7 @@ export default function LeakLensDashboard(props: {
             const nowMono = typeof performance !== "undefined" ? performance.now() : Date.now()
             const clientElapsed = (nowMono - leaseStartMono) / 1000
             try {
-                const resp = await fetch(`${currentApiUrl}/api/validate-lease`, {
+                const resp = await apiFetch("/api/validate-lease", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({

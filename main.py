@@ -65,6 +65,16 @@ async def https_forwarded_header_middleware(request: Request, call_next):
 
 SECRET_KEY = b"synapse_hackathon_secret_2026"
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com")
+ALLOWED_GOOGLE_CLIENT_IDS = {
+    cid.strip()
+    for cid in [
+        GOOGLE_CLIENT_ID,
+        "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
+        "81725914024-6s088pnfsi11jl8tug105mec0pguh3be.apps.googleusercontent.com",
+        os.environ.get("FRAMER_GOOGLE_CLIENT_ID", ""),
+    ]
+    if cid and not cid.startswith("YOUR_GOOGLE_CLIENT_ID")
+}
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "synapse_jwt_secret_key_2026")
 ALGORITHM = "HS256"
 
@@ -1259,12 +1269,14 @@ def create_jwt_token(email: str, name: str, picture: str = "") -> str:
 def google_auth_endpoint(req: GoogleAuthRequest, request: Request):
     """Verifies a Google ID token and returns a signed 24h application JWT session."""
     try:
-        aud = None if GOOGLE_CLIENT_ID.startswith("YOUR_GOOGLE_CLIENT_ID") or not GOOGLE_CLIENT_ID else GOOGLE_CLIENT_ID
         id_info = id_token.verify_oauth2_token(
             req.token,
             google_requests.Request(),
-            audience=aud,
+            audience=None,
         )
+        token_aud = id_info.get("aud")
+        if ALLOWED_GOOGLE_CLIENT_IDS and token_aud not in ALLOWED_GOOGLE_CLIENT_IDS:
+            raise HTTPException(status_code=401, detail=f"Google token audience mismatch: {token_aud}")
 
         email = id_info.get("email")
         if not email:

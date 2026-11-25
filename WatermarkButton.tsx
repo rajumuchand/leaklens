@@ -30,7 +30,7 @@ export default function WatermarkButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        apiUrl = "https://pretty-rabbits-stand.loca.lt",
         buttonLabel = "Generate Watermarked Copy",
         recipientId: initialRecipient = "Alice Smith (USR-8492)",
         sessionId: initialSession = "SES-SYNAPSE-2026",
@@ -68,6 +68,9 @@ export default function WatermarkButton(props: {
         }
         if (baseUrl.includes("ngrok")) {
             headers["ngrok-skip-browser-warning"] = "true"
+        }
+        if (baseUrl.includes("loca.lt")) {
+            headers["bypass-tunnel-reminder"] = "true"
         }
 
         try {
@@ -119,6 +122,7 @@ export default function WatermarkButton(props: {
         const baseUrl = apiUrl.replace(/\/+$/, "")
         const headers: Record<string, string> = {}
         if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         const formData = new FormData()
         formData.append("file", pdfFile)
@@ -157,6 +161,7 @@ export default function WatermarkButton(props: {
         const baseUrl = apiUrl.replace(/\/+$/, "")
         const headers: Record<string, string> = {}
         if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         const formData = new FormData()
         formData.append("file", pdfFile)
@@ -191,6 +196,7 @@ export default function WatermarkButton(props: {
         const baseUrl = apiUrl.replace(/\/+$/, "")
         const headers: Record<string, string> = { "Content-Type": "application/json" }
         if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         try {
             const resp = await fetch(`${baseUrl}/api/export-watermark-pdf`, {
@@ -516,7 +522,7 @@ addPropertyControls(WatermarkButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        defaultValue: "https://pretty-rabbits-stand.loca.lt",
         description: "Your ngrok or Cloudflare tunnel URL (no trailing slash).",
     },
     buttonLabel: {

@@ -31,7 +31,7 @@ export default function InspectLeakButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        apiUrl = "https://pretty-rabbits-stand.loca.lt",
         buttonLabel = "Run Forensic Leak Analysis",
         pastedSnippet: initialSnippet = "",
         showTextarea = true,
@@ -77,6 +77,9 @@ export default function InspectLeakButton(props: {
         if (baseUrl.includes("ngrok")) {
             headers["ngrok-skip-browser-warning"] = "true"
         }
+        if (baseUrl.includes("loca.lt")) {
+            headers["bypass-tunnel-reminder"] = "true"
+        }
 
         try {
             const response = await fetch(`${baseUrl}/api/inspect`, {
@@ -109,6 +112,7 @@ export default function InspectLeakButton(props: {
         const baseUrl = apiUrl.replace(/\/+$/, "")
         const headers: Record<string, string> = {}
         if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         const formData = new FormData()
         formData.append("file", file)
@@ -392,7 +396,7 @@ addPropertyControls(InspectLeakButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        defaultValue: "https://pretty-rabbits-stand.loca.lt",
         description: "Your ngrok or Cloudflare tunnel URL (no trailing slash).",
     },
     buttonLabel: {

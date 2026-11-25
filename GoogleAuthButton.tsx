@@ -29,7 +29,7 @@ export default function GoogleAuthButton(props: {
     onLoginSuccess?: (user: GoogleUser) => void
 }) {
     const {
-        apiUrl = "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        apiUrl = "https://pretty-rabbits-stand.loca.lt",
         clientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
         redirectUrl = "https://leaklens.framer.ai/",
         enableRedirect = true,
@@ -77,6 +77,7 @@ export default function GoogleAuthButton(props: {
             try {
                 const headers: Record<string, string> = { "Content-Type": "application/json" }
                 if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+                if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
                 const res = await fetch(`${baseUrl}/api/auth/google`, {
                     method: "POST",
@@ -125,6 +126,7 @@ export default function GoogleAuthButton(props: {
             Authorization: `Bearer ${storedToken}`,
         }
         if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         fetch(`${baseUrl}/api/auth/me`, { headers })
             .then((r) => (r.ok ? r.json() : null))
@@ -317,7 +319,7 @@ addPropertyControls(GoogleAuthButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://optimal-symptoms-letters-modem.trycloudflare.com",
+        defaultValue: "https://pretty-rabbits-stand.loca.lt",
     },
     clientId: {
         type: ControlType.String,
