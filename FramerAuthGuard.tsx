@@ -16,7 +16,7 @@ export interface AuthGuardUser {
 }
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website"
-const BACKEND_URL = "https://leaklens-omega.vercel.app"
+const BACKEND_URL = "https://wise-cups-return.loca.lt"
 
 function decodeJwtUserOffline(token: string): AuthGuardUser | null {
     try {
@@ -107,6 +107,8 @@ export default function FramerAuthGuard(props: {
         const headers: Record<string, string> = {
             Authorization: `Bearer ${token}`,
         }
+        if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
+        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         fetch(`${baseUrl}/api/auth/me`, { headers })
             .then(async (res) => {

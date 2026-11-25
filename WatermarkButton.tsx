@@ -30,7 +30,7 @@ export default function WatermarkButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://leaklens-omega.vercel.app",
+        apiUrl = "https://wise-cups-return.loca.lt",
         buttonLabel = "Generate Watermarked Copy",
         recipientId: initialRecipient = "Alice Smith (USR-8492)",
         sessionId: initialSession = "SES-SYNAPSE-2026",
@@ -522,7 +522,7 @@ addPropertyControls(WatermarkButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://leaklens-omega.vercel.app",
+        defaultValue: "https://wise-cups-return.loca.lt",
         description: "Your ngrok or Cloudflare tunnel URL (no trailing slash).",
     },
     buttonLabel: {

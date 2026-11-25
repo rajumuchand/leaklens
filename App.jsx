@@ -2,14 +2,15 @@ import React, { useEffect, useMemo, useState } from "react";
 import LeakLensDashboard from "./LeakLensDashboard";
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website";
+const BACKEND_URL = "https://wise-cups-return.loca.lt";
 
 const resolveBackendUrl = () => {
-  if (typeof window === "undefined") return "https://leaklens-omega.vercel.app";
+  if (typeof window === "undefined") return BACKEND_URL;
   const host = window.location.hostname;
-  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".vercel.app")) {
+  if (host === "localhost" || host === "127.0.0.1") {
     return "";
   }
-  return "https://leaklens-omega.vercel.app";
+  return BACKEND_URL;
 };
 
 export const OFFLINE_CONFIDENTIAL_DOCS = [
@@ -167,10 +168,18 @@ export default function App() {
         return;
       }
 
+      const verifyAuthMe = async (base) => {
+        const headers = { Authorization: `Bearer ${token}` };
+        if (base.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
+        if (base.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true";
+        return fetch(`${base}/api/auth/me`, { headers });
+      };
+
       try {
-        const res = await fetch(`${backendUrl}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        let res = await verifyAuthMe(backendUrl);
+        if (!res.ok && res.status !== 401 && res.status !== 403 && backendUrl && window.location.hostname.endsWith(".vercel.app")) {
+          res = await verifyAuthMe("");
+        }
         if (res.status === 401 || res.status === 403) {
           localStorage.clear();
           window.location.href = FRAMER_LOGIN_URL;
@@ -189,7 +198,30 @@ export default function App() {
           }
         }
       } catch {
-        // Network / backend unreachable -> fall back cleanly to offline cached session
+        if (backendUrl && window.location.hostname.endsWith(".vercel.app")) {
+          try {
+            const fallbackRes = await verifyAuthMe("");
+            if (fallbackRes.status === 401 || fallbackRes.status === 403) {
+              localStorage.clear();
+              window.location.href = FRAMER_LOGIN_URL;
+              return;
+            }
+            if (fallbackRes.ok) {
+              const data = await fallbackRes.json().catch(() => ({}));
+              if (data?.status === "authenticated" && data.user) {
+                if (!active) return;
+                localStorage.setItem("user_email", data.user.email);
+                localStorage.setItem("user_name", data.user.name || data.user.email);
+                setUser(data.user);
+                setOfflineMode(false);
+                setLoading(false);
+                return;
+              }
+            }
+          } catch {
+            // Fall through to offline cached JWT session
+          }
+        }
       }
 
       const decoded = decodeJwtPayload(token);

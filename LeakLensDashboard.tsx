@@ -52,15 +52,16 @@ interface LeaseResponse {
 }
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website"
-const DEFAULT_REMOTE_BACKEND = "https://leaklens-omega.vercel.app"
+const BACKEND_URL = "https://wise-cups-return.loca.lt"
+const DEFAULT_REMOTE_BACKEND = BACKEND_URL
 
 const resolveDefaultBackendUrl = (): string => {
-    if (typeof window === "undefined") return DEFAULT_REMOTE_BACKEND
+    if (typeof window === "undefined") return BACKEND_URL
     const host = window.location.hostname
-    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".vercel.app")) {
+    if (host === "localhost" || host === "127.0.0.1") {
         return ""
     }
-    return DEFAULT_REMOTE_BACKEND
+    return BACKEND_URL
 }
 
 const OFFLINE_CONFIDENTIAL_DOCS = [

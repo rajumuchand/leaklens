@@ -29,7 +29,7 @@ export default function GoogleAuthButton(props: {
     onLoginSuccess?: (user: GoogleUser) => void
 }) {
     const {
-        apiUrl = "https://leaklens-omega.vercel.app",
+        apiUrl = "https://wise-cups-return.loca.lt",
         clientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
         redirectUrl = "https://leaklens.framer.ai/",
         enableRedirect = true,
@@ -319,7 +319,7 @@ addPropertyControls(GoogleAuthButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://leaklens-omega.vercel.app",
+        defaultValue: "https://wise-cups-return.loca.lt",
     },
     clientId: {
         type: ControlType.String,

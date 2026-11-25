@@ -38,7 +38,7 @@ export default function DrmLeaseButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://leaklens-omega.vercel.app",
+        apiUrl = "https://wise-cups-return.loca.lt",
         leaseSeconds = 30,
         buttonLabel = "Reset / Renew Lease",
         autoPoll = true,
@@ -260,7 +260,7 @@ addPropertyControls(DrmLeaseButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://leaklens-omega.vercel.app",
+        defaultValue: "https://wise-cups-return.loca.lt",
     },
     leaseSeconds: {
         type: ControlType.Number,
