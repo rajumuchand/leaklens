@@ -603,7 +603,7 @@ export default function LeakLensDashboard(props: {
             setWatermarkResult(data)
             setApiStatus("online")
         } catch {
-            setApiStatus("offline")
+            if (!clientOnly) setApiStatus("offline")
             setWatermarkResult(encodeOfflineWatermark(textInput, recipientId, sessionId))
         } finally {
             setIsWatermarking(false)
@@ -735,7 +735,7 @@ export default function LeakLensDashboard(props: {
             }
             setApiStatus("online")
         } catch {
-            setApiStatus("offline")
+            if (!clientOnly) setApiStatus("offline")
             const offlineData = decodeOfflineWatermark(leakedTextInput)
             setInspectResult(offlineData)
             if (offlineData.match_found && offlineData.verified) {
@@ -928,8 +928,8 @@ export default function LeakLensDashboard(props: {
         setBobCopy(bobOffline.watermarked_text)
         setStressInput(aliceOffline.watermarked_text)
         setStressResult(null)
-        setApiStatus("offline")
-    }, [apiFetch, STRESS_MEMO])
+        if (!clientOnly) setApiStatus("offline")
+    }, [apiFetch, clientOnly, STRESS_MEMO])
 
     React.useEffect(() => {
         if (activeTab === "stress" && !aliceCopy) {
@@ -962,7 +962,7 @@ export default function LeakLensDashboard(props: {
                     `🚨 OFFLINE FORENSIC MATCH: Recipient ${offlineRes.recipient_id} | Session ${offlineRes.session_id}.`
                 )
             }
-            setApiStatus("offline")
+            if (!clientOnly) setApiStatus("offline")
         } finally {
             setIsStressTesting(false)
         }
@@ -1078,7 +1078,7 @@ export default function LeakLensDashboard(props: {
             isCancelled = true
             clearInterval(interval)
         }
-    }, [offlineEnabled, permissionEndTs, currentApiUrl, leaseToken, rsaJwt, leaseStartMono, simClockOffset])
+    }, [clientOnly, offlineEnabled, permissionEndTs, currentApiUrl, leaseToken, rsaJwt, leaseStartMono, simClockOffset])
 
     const handleResetLease = (mins: number) => {
         issueSignedLease(mins * 60)
@@ -1211,7 +1211,11 @@ export default function LeakLensDashboard(props: {
                                 backgroundColor: apiStatus === "online" ? accentColor : "#ef4444",
                             }}
                         />
-                        {apiStatus === "online" ? "FASTAPI BACKEND: ONLINE" : "FASTAPI BACKEND: CONNECTING"} ⚙
+                        {clientOnly
+                            ? "OFFLINE VAULT: ACTIVE"
+                            : apiStatus === "online"
+                              ? "FASTAPI BACKEND: ONLINE"
+                              : "FASTAPI BACKEND: CONNECTING"} ⚙
                     </div>
 
                     <div
@@ -1289,6 +1293,10 @@ export default function LeakLensDashboard(props: {
                     />
                     <button
                         onClick={() => {
+                            if (clientOnly) {
+                                setApiStatus("online")
+                                return
+                            }
                             setApiStatus("checking")
                             fetch(`${normalizedBackendUrl}/api/health`, { headers: buildApiHeaders() })
                                 .then((r) => (r.ok ? setApiStatus("online") : setApiStatus("offline")))
@@ -1592,7 +1600,6 @@ export default function LeakLensDashboard(props: {
                                     onCopy={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
                                     onCut={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
                                     onContextMenu={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
-                                    onSelectStart={(e) => e.preventDefault()}
                                     style={{
                                         position: "relative",
                                         overflow: "hidden",
@@ -1608,7 +1615,6 @@ export default function LeakLensDashboard(props: {
                                         whiteSpace: "pre-wrap",
                                         userSelect: "none",
                                         WebkitUserSelect: "none",
-                                        msUserSelect: "none",
                                     }}
                                 >
                                     <div
@@ -1634,7 +1640,7 @@ export default function LeakLensDashboard(props: {
                                     >
                                         {[0, 1, 2].map((row) => (
                                             <div key={row}>
-                                                {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "security_user@leaklens.io"} • SESSION ACTIVE  •  `.repeat(2)}
+                                                {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "security_user@leaklens.io"} • SECURE SESSION  •  `.repeat(2)}
                                             </div>
                                         ))}
                                     </div>
@@ -2221,7 +2227,6 @@ export default function LeakLensDashboard(props: {
                                         onCut={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
                                         onPaste={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
                                         onContextMenu={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
-                                        onSelectStart={(e) => e.preventDefault()}
                                         style={{
                                             position: "relative",
                                             backgroundColor: "#020604",
@@ -2232,7 +2237,6 @@ export default function LeakLensDashboard(props: {
                                             overflow: "hidden",
                                             userSelect: "none",
                                             WebkitUserSelect: "none",
-                                            msUserSelect: "none",
                                         }}
                                     >
                                         <div style={{ position: "relative", zIndex: 1, fontSize: 12, lineHeight: 1.6, color: "#F3F2F8", whiteSpace: "pre-wrap" }}>
@@ -2253,7 +2257,6 @@ export default function LeakLensDashboard(props: {
                                                     pointerEvents: "none",
                                                     userSelect: "none",
                                                     WebkitUserSelect: "none",
-                                                    msUserSelect: "none",
                                                     transform: "rotate(-18deg)",
                                                     opacity: 0.15,
                                                     display: "flex",
@@ -2268,7 +2271,7 @@ export default function LeakLensDashboard(props: {
                                             >
                                                 {[0, 1, 2, 3].map((row) => (
                                                     <div key={row}>
-                                                        {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "security_user@leaklens.io"} • SESSION ACTIVE  •  `.repeat(2)}
+                                                        {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "security_user@leaklens.io"} • SECURE SESSION  •  `.repeat(2)}
                                                     </div>
                                                 ))}
                                             </div>

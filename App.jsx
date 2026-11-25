@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import LeakLensDashboard from "./LeakLensDashboard";
+import { registerServiceWorker } from "./src/swRegister";
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website";
 
@@ -59,11 +60,12 @@ function decodeTokenIdentity(token) {
 
 export function SecurityWatermarkOverlay({ userEmail }) {
   const identity = userEmail || "security_user@leaklens.io";
-  const stamp = `CONFIDENTIAL • ACCESSED BY ${identity} • SESSION ACTIVE`;
+  const stamp = `CONFIDENTIAL • ACCESSED BY ${identity} • SECURE SESSION`;
 
   return (
     <div
       aria-hidden="true"
+      className="drm-protected-surface"
       style={{
         position: "fixed",
         inset: "-30%",
@@ -71,7 +73,6 @@ export function SecurityWatermarkOverlay({ userEmail }) {
         pointerEvents: "none",
         userSelect: "none",
         WebkitUserSelect: "none",
-        msUserSelect: "none",
         transform: "rotate(-22deg)",
         opacity: 0.14,
         display: "flex",
@@ -96,6 +97,27 @@ export default function App() {
   const [authorized, setAuthorized] = useState(false);
   const [userEmail, setUserEmail] = useState("security_user@leaklens.io");
   const [selectedDocId, setSelectedDocId] = useState(MOCK_CONFIDENTIAL_DOCS[0].id);
+  const [isOffline, setIsOffline] = useState(() =>
+    typeof navigator !== "undefined" ? !navigator.onLine : false
+  );
+
+  // Register offline Service Worker cleanly in production or HTTPS environments
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
+  // Track offline/online state cleanly with zero network requests
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const goOnline = () => setIsOffline(false);
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   // Global DRM keyboard lockdown across entire client-side reader view
   useEffect(() => {
@@ -104,10 +126,14 @@ export default function App() {
       const code = e.code || "";
       const mod = e.ctrlKey || e.metaKey;
       const isF12 = e.key === "F12" || code === "F12" || e.keyCode === 123;
-      const isDevTools = mod && (e.shiftKey || e.altKey) && (key === "i" || code === "KeyI");
+      const isDevTools =
+        (e.ctrlKey && e.shiftKey && (key === "i" || code === "KeyI")) ||
+        (e.metaKey && e.altKey && (key === "i" || code === "KeyI")) ||
+        (mod && (e.shiftKey || e.altKey) && (key === "i" || key === "j" || code === "KeyI"));
       const isViewSource = mod && (key === "u" || code === "KeyU");
       const isSavePage = mod && (key === "s" || code === "KeyS");
-      const isCopyCut = mod && (key === "c" || code === "KeyC" || key === "x" || code === "KeyX");
+      const isCopyCut =
+        mod && (key === "c" || code === "KeyC" || key === "x" || code === "KeyX");
 
       if (isF12 || isDevTools || isViewSource || isSavePage || isCopyCut) {
         e.preventDefault();
@@ -166,6 +192,11 @@ export default function App() {
     e.preventDefault();
   };
 
+  const handleLogout = () => {
+    localStorage.clear();
+    window.location.href = FRAMER_LOGIN_URL;
+  };
+
   return (
     <div
       style={{
@@ -177,11 +208,15 @@ export default function App() {
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
-      {/* Fixed Diagonal Watermark Layer across Reader View */}
+      {/* Fixed Diagonal Security Watermark Overlay across Reader Viewport */}
       <SecurityWatermarkOverlay userEmail={userEmail} />
 
       {/* Built-in Confidential Document Reader Container (DRM Locked) */}
       <div
+        className="drm-protected-surface"
+        onContextMenu={preventInteraction}
+        onCopy={preventInteraction}
+        onCut={preventInteraction}
         style={{
           maxWidth: 1040,
           margin: "0 auto 24px",
@@ -191,6 +226,8 @@ export default function App() {
           backgroundColor: "rgba(6, 6, 10, 0.88)",
           position: "relative",
           zIndex: 1,
+          userSelect: "none",
+          WebkitUserSelect: "none",
         }}
       >
         <div
@@ -204,15 +241,17 @@ export default function App() {
           }}
         >
           <div>
-            <div style={{ fontSize: 11, fontFamily: "monospace", color: "#2BD8C8" }}>
-              CLIENT-SIDE PROTECTED VAULT • ZERO EXTERNAL API CALLS
+            <div style={{ fontSize: 11, fontFamily: "monospace", color: isOffline ? "#FFB627" : "#2BD8C8" }}>
+              {isOffline
+                ? "OFFLINE PWA VAULT ACTIVE • CACHED SHELL"
+                : "LOCAL-FIRST PROTECTED VAULT • ZERO EXTERNAL API CALLS"}
             </div>
             <h2 style={{ margin: "4px 0 0", fontSize: 18 }}>
-              Confidential Document Reader
+              LeakLens Confidential Document Reader
             </h2>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {MOCK_CONFIDENTIAL_DOCS.map((doc) => (
               <button
                 key={doc.id}
@@ -237,10 +276,26 @@ export default function App() {
                 {doc.title.split(" — ")[0]}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={handleLogout}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 999,
+                border: "1px solid rgba(239, 68, 68, 0.45)",
+                backgroundColor: "rgba(239, 68, 68, 0.12)",
+                color: "#fca5a5",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Logout
+            </button>
           </div>
         </div>
 
         <div
+          className="drm-protected-surface"
           onContextMenu={preventInteraction}
           onCopy={preventInteraction}
           onCut={preventInteraction}
@@ -251,7 +306,6 @@ export default function App() {
             border: "1px solid rgba(255, 182, 39, 0.25)",
             userSelect: "none",
             WebkitUserSelect: "none",
-            msUserSelect: "none",
           }}
         >
           <div style={{ fontSize: 11, fontFamily: "monospace", color: "#FFB627", marginBottom: 8 }}>
