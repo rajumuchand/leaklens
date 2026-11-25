@@ -31,7 +31,7 @@ export default function InspectLeakButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://wise-cups-return.loca.lt",
+        apiUrl = "https://leaklens-omega.vercel.app",
         buttonLabel = "Run Forensic Leak Analysis",
         pastedSnippet: initialSnippet = "",
         showTextarea = true,
@@ -396,7 +396,7 @@ addPropertyControls(InspectLeakButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://wise-cups-return.loca.lt",
+        defaultValue: "https://leaklens-omega.vercel.app",
         description: "Your ngrok or Cloudflare tunnel URL (no trailing slash).",
     },
     buttonLabel: {

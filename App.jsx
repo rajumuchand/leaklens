@@ -1,19 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import LeakLensDashboard from "./LeakLensDashboard";
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website";
-const BACKEND_URL = "https://wise-cups-return.loca.lt";
 
-const resolveBackendUrl = () => {
-  if (typeof window === "undefined") return BACKEND_URL;
-  const host = window.location.hostname;
-  if (host === "localhost" || host === "127.0.0.1") {
-    return "";
-  }
-  return BACKEND_URL;
-};
-
-export const OFFLINE_CONFIDENTIAL_DOCS = [
+const MOCK_CONFIDENTIAL_DOCS = [
   {
     id: "doc-helios-ma",
     title: "Project Helios — Executive M&A Valuation Brief",
@@ -29,7 +19,7 @@ export const OFFLINE_CONFIDENTIAL_DOCS = [
     classification: "INTERNAL RESTRICTED",
     content:
       "SECURITY AUDIT SUMMARY: All ephemeral RAM decryption keys rotate every 30 seconds via monotonic counters.\n" +
-      "Offline read permissions remain cryptographically sealed inside client memory with zero disk persistence.\n" +
+      "Client-side read permissions remain protected in memory with zero plaintext persistence.\n" +
       "Forensic attribution payloads survive arbitrary snippet truncation above 10% text recovery.",
   },
   {
@@ -43,7 +33,7 @@ export const OFFLINE_CONFIDENTIAL_DOCS = [
   },
 ];
 
-function decodeJwtPayload(token) {
+function decodeTokenIdentity(token) {
   try {
     const parts = (token || "").split(".");
     if (parts.length !== 3) return null;
@@ -59,11 +49,8 @@ function decodeJwtPayload(token) {
     if (payload.exp && payload.exp < Date.now() / 1000) return { expired: true };
     return {
       expired: false,
-      user: {
-        email: payload.sub || payload.email || "authenticated_user",
-        name: payload.name || payload.sub || "Authenticated User",
-        picture: payload.picture || "",
-      },
+      email: payload.sub || payload.email || "security_user@leaklens.io",
+      name: payload.name || payload.sub || "Security User",
     };
   } catch {
     return null;
@@ -71,58 +58,46 @@ function decodeJwtPayload(token) {
 }
 
 export function SecurityWatermarkOverlay({ userEmail }) {
-  const [timestamp, setTimestamp] = useState(() =>
-    new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC"
-  );
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimestamp(new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC");
-    }, 30000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const stamp = `CONFIDENTIAL • ACCESSED BY ${userEmail || "authenticated_user"} • ${timestamp} • SECURE SESSION`;
+  const identity = userEmail || "security_user@leaklens.io";
+  const stamp = `CONFIDENTIAL • ACCESSED BY ${identity} • SESSION ACTIVE`;
 
   return (
     <div
       aria-hidden="true"
       style={{
-        position: "absolute",
-        inset: "-35%",
+        position: "fixed",
+        inset: "-30%",
         zIndex: 9999,
         pointerEvents: "none",
         userSelect: "none",
         WebkitUserSelect: "none",
         msUserSelect: "none",
-        transform: "rotate(-20deg)",
-        opacity: 0.15,
+        transform: "rotate(-22deg)",
+        opacity: 0.14,
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-around",
-        gap: 28,
+        gap: 36,
         fontFamily: "monospace",
-        fontSize: 10.5,
+        fontSize: 12,
         fontWeight: 700,
         color: "#FFB627",
         whiteSpace: "nowrap",
       }}
     >
-      {[0, 1, 2, 3, 4, 5].map((idx) => (
-        <div key={idx}>{`${stamp}   •   `.repeat(3)}</div>
+      {[0, 1, 2, 3, 4, 5, 6].map((idx) => (
+        <div key={idx}>{`${stamp}   •   `.repeat(4)}</div>
       ))}
     </div>
   );
 }
 
 export default function App() {
-  const backendUrl = useMemo(() => resolveBackendUrl(), []);
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [offlineMode, setOfflineMode] = useState(false);
-  const [selectedDocId, setSelectedDocId] = useState(OFFLINE_CONFIDENTIAL_DOCS[0].id);
+  const [authorized, setAuthorized] = useState(false);
+  const [userEmail, setUserEmail] = useState("security_user@leaklens.io");
+  const [selectedDocId, setSelectedDocId] = useState(MOCK_CONFIDENTIAL_DOCS[0].id);
 
-  // Global DRM keyboard lockdown across entire authenticated session
+  // Global DRM keyboard lockdown across entire client-side reader view
   useEffect(() => {
     const handleKeyDown = (e) => {
       const key = (e.key || "").toLowerCase();
@@ -132,8 +107,9 @@ export default function App() {
       const isDevTools = mod && (e.shiftKey || e.altKey) && (key === "i" || code === "KeyI");
       const isViewSource = mod && (key === "u" || code === "KeyU");
       const isSavePage = mod && (key === "s" || code === "KeyS");
+      const isCopyCut = mod && (key === "c" || code === "KeyC" || key === "x" || code === "KeyX");
 
-      if (isF12 || isDevTools || isViewSource || isSavePage) {
+      if (isF12 || isDevTools || isViewSource || isSavePage || isCopyCut) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -143,147 +119,68 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, []);
 
-  // Client-side Auth Gate + Offline Resilient Fallback
+  // Client-side only Auth Handoff & Token Persistence (zero external fetch calls)
   useEffect(() => {
-    let active = true;
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get("token");
+    const emailFromUrl = urlParams.get("email");
 
-    const initAuth = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const tokenFromUrl = urlParams.get("token");
-      const emailFromUrl = urlParams.get("email");
-
-      if (tokenFromUrl) {
-        localStorage.setItem("access_token", tokenFromUrl);
-        if (emailFromUrl) localStorage.setItem("user_email", emailFromUrl);
-        try {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } catch {
-          // Ignore history errors in sandboxed contexts
-        }
-      }
-
-      const token = localStorage.getItem("access_token");
-      if (!token) {
-        window.location.href = FRAMER_LOGIN_URL;
-        return;
-      }
-
-      const verifyAuthMe = async (base) => {
-        const headers = { Authorization: `Bearer ${token}` };
-        if (base.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-        if (base.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true";
-        return fetch(`${base}/api/auth/me`, { headers });
-      };
-
+    if (tokenFromUrl) {
+      localStorage.setItem("access_token", tokenFromUrl);
+      if (emailFromUrl) localStorage.setItem("user_email", emailFromUrl);
       try {
-        let res = await verifyAuthMe(backendUrl);
-        if (!res.ok && res.status !== 401 && res.status !== 403 && backendUrl && window.location.hostname.endsWith(".vercel.app")) {
-          res = await verifyAuthMe("");
-        }
-        if (res.status === 401 || res.status === 403) {
-          localStorage.clear();
-          window.location.href = FRAMER_LOGIN_URL;
-          return;
-        }
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          if (data?.status === "authenticated" && data.user) {
-            if (!active) return;
-            localStorage.setItem("user_email", data.user.email);
-            localStorage.setItem("user_name", data.user.name || data.user.email);
-            setUser(data.user);
-            setOfflineMode(false);
-            setLoading(false);
-            return;
-          }
-        }
+        window.history.replaceState({}, document.title, window.location.pathname);
       } catch {
-        if (backendUrl && window.location.hostname.endsWith(".vercel.app")) {
-          try {
-            const fallbackRes = await verifyAuthMe("");
-            if (fallbackRes.status === 401 || fallbackRes.status === 403) {
-              localStorage.clear();
-              window.location.href = FRAMER_LOGIN_URL;
-              return;
-            }
-            if (fallbackRes.ok) {
-              const data = await fallbackRes.json().catch(() => ({}));
-              if (data?.status === "authenticated" && data.user) {
-                if (!active) return;
-                localStorage.setItem("user_email", data.user.email);
-                localStorage.setItem("user_name", data.user.name || data.user.email);
-                setUser(data.user);
-                setOfflineMode(false);
-                setLoading(false);
-                return;
-              }
-            }
-          } catch {
-            // Fall through to offline cached JWT session
-          }
-        }
+        // Ignore history restriction in sandboxed environments
       }
+    }
 
-      const decoded = decodeJwtPayload(token);
-      if (decoded?.expired) {
-        localStorage.clear();
-        window.location.href = FRAMER_LOGIN_URL;
-        return;
-      }
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      window.location.href = FRAMER_LOGIN_URL;
+      return;
+    }
 
-      if (!active) return;
-      const fallbackEmail =
-        decoded?.user?.email || localStorage.getItem("user_email") || "authenticated_user";
-      const fallbackName =
-        decoded?.user?.name || localStorage.getItem("user_name") || fallbackEmail;
-      setUser({ email: fallbackEmail, name: fallbackName, picture: decoded?.user?.picture || "" });
-      setOfflineMode(true);
-      setLoading(false);
-    };
+    const decoded = decodeTokenIdentity(token);
+    if (decoded?.expired) {
+      localStorage.clear();
+      window.location.href = FRAMER_LOGIN_URL;
+      return;
+    }
 
-    initAuth();
-    return () => {
-      active = false;
-    };
-  }, [backendUrl]);
+    const resolvedEmail =
+      decoded?.email || localStorage.getItem("user_email") || "security_user@leaklens.io";
+    setUserEmail(resolvedEmail);
+    setAuthorized(true);
+  }, []);
+
+  if (!authorized) {
+    return null;
+  }
 
   const activeDoc =
-    OFFLINE_CONFIDENTIAL_DOCS.find((doc) => doc.id === selectedDocId) ||
-    OFFLINE_CONFIDENTIAL_DOCS[0];
+    MOCK_CONFIDENTIAL_DOCS.find((doc) => doc.id === selectedDocId) ||
+    MOCK_CONFIDENTIAL_DOCS[0];
 
-  const blockClipboardOrMenu = (e) => {
+  const preventInteraction = (e) => {
     e.preventDefault();
   };
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#000000",
-          color: "#F3F2F8",
-          fontFamily: "system-ui, sans-serif",
-        }}
-      >
-        Verifying LeakLens security session...
-      </div>
-    );
-  }
 
   return (
     <div
       style={{
         minHeight: "100vh",
+        position: "relative",
         backgroundColor: "#000000",
         color: "#F3F2F8",
         padding: "24px 16px",
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
-      {/* Protected Confidential Document Reading Pane (DRM Copy-Lock + Dynamic Watermark) */}
+      {/* Fixed Diagonal Watermark Layer across Reader View */}
+      <SecurityWatermarkOverlay userEmail={userEmail} />
+
+      {/* Built-in Confidential Document Reader Container (DRM Locked) */}
       <div
         style={{
           maxWidth: 1040,
@@ -291,7 +188,9 @@ export default function App() {
           padding: 20,
           borderRadius: 12,
           border: "1px solid rgba(243, 242, 248, 0.14)",
-          backgroundColor: "rgba(6, 6, 10, 0.84)",
+          backgroundColor: "rgba(6, 6, 10, 0.88)",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <div
@@ -306,15 +205,15 @@ export default function App() {
         >
           <div>
             <div style={{ fontSize: 11, fontFamily: "monospace", color: "#2BD8C8" }}>
-              {offlineMode ? "OFFLINE RESILIENT VAULT • CACHED SESSION" : "LIVE CRYPTOGRAPHIC SESSION"}
+              CLIENT-SIDE PROTECTED VAULT • ZERO EXTERNAL API CALLS
             </div>
             <h2 style={{ margin: "4px 0 0", fontSize: 18 }}>
-              Protected Confidential Document Reader
+              Confidential Document Reader
             </h2>
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {OFFLINE_CONFIDENTIAL_DOCS.map((doc) => (
+            {MOCK_CONFIDENTIAL_DOCS.map((doc) => (
               <button
                 key={doc.id}
                 type="button"
@@ -342,12 +241,10 @@ export default function App() {
         </div>
 
         <div
-          onContextMenu={blockClipboardOrMenu}
-          onCopy={blockClipboardOrMenu}
-          onCut={blockClipboardOrMenu}
+          onContextMenu={preventInteraction}
+          onCopy={preventInteraction}
+          onCut={preventInteraction}
           style={{
-            position: "relative",
-            overflow: "hidden",
             borderRadius: 10,
             padding: 22,
             backgroundColor: "#040508",
@@ -357,23 +254,22 @@ export default function App() {
             msUserSelect: "none",
           }}
         >
-          <SecurityWatermarkOverlay userEmail={user?.email} />
-          <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ fontSize: 11, fontFamily: "monospace", color: "#FFB627", marginBottom: 8 }}>
-              {activeDoc.classification} • {activeDoc.title}
-            </div>
-            <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-              {activeDoc.content}
-            </div>
+          <div style={{ fontSize: 11, fontFamily: "monospace", color: "#FFB627", marginBottom: 8 }}>
+            {activeDoc.classification} • {activeDoc.title}
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+            {activeDoc.content}
           </div>
         </div>
       </div>
 
-      <LeakLensDashboard
-        apiUrl={backendUrl}
-        loginUrl={FRAMER_LOGIN_URL}
-        requireAuthGuard={false}
-      />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <LeakLensDashboard
+          clientOnly={true}
+          loginUrl={FRAMER_LOGIN_URL}
+          requireAuthGuard={false}
+        />
+      </div>
     </div>
   );
 }

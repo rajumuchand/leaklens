@@ -52,16 +52,15 @@ interface LeaseResponse {
 }
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website"
-const BACKEND_URL = "https://wise-cups-return.loca.lt"
-const DEFAULT_REMOTE_BACKEND = BACKEND_URL
+const DEFAULT_REMOTE_BACKEND = "https://leaklens-omega.vercel.app"
 
 const resolveDefaultBackendUrl = (): string => {
-    if (typeof window === "undefined") return BACKEND_URL
+    if (typeof window === "undefined") return ""
     const host = window.location.hostname
-    if (host === "localhost" || host === "127.0.0.1") {
+    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".vercel.app")) {
         return ""
     }
-    return BACKEND_URL
+    return DEFAULT_REMOTE_BACKEND
 }
 
 const OFFLINE_CONFIDENTIAL_DOCS = [
@@ -197,6 +196,7 @@ export default function LeakLensDashboard(props: {
     googleClientId?: string
     loginUrl?: string
     requireAuthGuard?: boolean
+    clientOnly?: boolean
 }) {
     const defaultBackendUrl = React.useMemo(() => resolveDefaultBackendUrl(), [])
     const {
@@ -206,6 +206,7 @@ export default function LeakLensDashboard(props: {
         googleClientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
         loginUrl = FRAMER_LOGIN_URL,
         requireAuthGuard = true,
+        clientOnly = true,
     } = props
 
     const isFramerEditor = React.useMemo(() => {
@@ -237,6 +238,9 @@ export default function LeakLensDashboard(props: {
     )
     const apiFetch = React.useCallback(
         (path: string, options: RequestInit = {}) => {
+            if (clientOnly) {
+                return Promise.reject(new Error("client_only"))
+            }
             const extraHeaders: Record<string, string> = {}
             if (options.headers && typeof options.headers === "object" && !Array.isArray(options.headers)) {
                 Object.assign(extraHeaders, options.headers)
@@ -246,7 +250,7 @@ export default function LeakLensDashboard(props: {
                 headers: buildApiHeaders(extraHeaders),
             })
         },
-        [normalizedBackendUrl, buildApiHeaders]
+        [clientOnly, normalizedBackendUrl, buildApiHeaders]
     )
     const buildFramerLoginUrl = React.useCallback(() => {
         const target = loginUrl || FRAMER_LOGIN_URL
@@ -461,6 +465,13 @@ export default function LeakLensDashboard(props: {
     // Check Backend Health on mount / url change & issue initial signed lease
     React.useEffect(() => {
         let isMounted = true
+        if (clientOnly) {
+            setApiStatus("online")
+            issueSignedLease(30 * 60)
+            return () => {
+                isMounted = false
+            }
+        }
         apiFetch("/api/health")
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error("offline"))))
             .then(() => {
@@ -473,7 +484,7 @@ export default function LeakLensDashboard(props: {
         return () => {
             isMounted = false
         }
-    }, [normalizedBackendUrl, buildApiHeaders])
+    }, [clientOnly, normalizedBackendUrl, buildApiHeaders])
 
     // --- TAB 1: CALL /api/watermark (with offline client-side fallback) ---
     const handleGenerateWatermark = async () => {
@@ -688,6 +699,25 @@ export default function LeakLensDashboard(props: {
             return
         }
 
+        if (clientOnly) {
+            const offlineSession = decodeJwtOffline(storedToken)
+            if (offlineSession?.expired) {
+                window.localStorage.clear()
+                if (requireAuthGuard && !isFramerEditor) {
+                    window.location.href = buildFramerLoginUrl()
+                }
+                return
+            }
+            const fallbackEmail =
+                offlineSession?.user?.email || window.localStorage.getItem("user_email") || "security_user@leaklens.io"
+            const fallbackName =
+                offlineSession?.user?.name || window.localStorage.getItem("user_name") || "Security User"
+            setAuthUser({ email: fallbackEmail, name: fallbackName, picture: offlineSession?.user?.picture || "" })
+            setRecipientId(fallbackEmail)
+            setCheckingAuth(false)
+            return
+        }
+
         fetch(`${normalizedBackendUrl}/api/auth/me`, {
             headers: buildApiHeaders({ Authorization: `Bearer ${storedToken}` }),
         })
@@ -885,6 +915,23 @@ export default function LeakLensDashboard(props: {
         const interval = setInterval(async () => {
             const nowMono = typeof performance !== "undefined" ? performance.now() : Date.now()
             const clientElapsed = (nowMono - leaseStartMono) / 1000
+            if (clientOnly) {
+                if (!isCancelled) {
+                    const currentSec = Date.now() / 1000
+                    const remaining = simClockOffset < -5 ? 0 : Math.max(0, Math.floor(permissionEndTs - currentSec))
+                    setLeaseState((prev) => ({
+                        ...prev,
+                        access_allowed: remaining > 0 && !prev.ram_wiped,
+                        current_time: currentSec,
+                        permission_end_timestamp: permissionEndTs,
+                        monotonic_elapsed_seconds: clientElapsed,
+                        remaining_seconds: prev.ram_wiped ? 0 : remaining,
+                        status_message: remaining > 0 && !prev.ram_wiped ? "ACCESS GRANTED (CLIENT-SIDE)" : "ACCESS REVOKED / EXPIRED",
+                    }))
+                    setPollCount((prev) => prev + 1)
+                }
+                return
+            }
             try {
                 const resp = await apiFetch("/api/validate-lease", {
                     method: "POST",
@@ -1479,7 +1526,7 @@ export default function LeakLensDashboard(props: {
                                     >
                                         {[0, 1, 2].map((row) => (
                                             <div key={row}>
-                                                {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "authenticated_user"} • ${watermarkTimestamp} • SECURE SESSION  •  `.repeat(2)}
+                                                {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "security_user@leaklens.io"} • SESSION ACTIVE  •  `.repeat(2)}
                                             </div>
                                         ))}
                                     </div>
@@ -2113,7 +2160,7 @@ export default function LeakLensDashboard(props: {
                                             >
                                                 {[0, 1, 2, 3].map((row) => (
                                                     <div key={row}>
-                                                        {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "authenticated_user"} • ${watermarkTimestamp} • SECURE SESSION  •  `.repeat(2)}
+                                                        {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "security_user@leaklens.io"} • SESSION ACTIVE  •  `.repeat(2)}
                                                     </div>
                                                 ))}
                                             </div>

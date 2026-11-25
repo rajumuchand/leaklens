@@ -16,7 +16,7 @@ export interface AuthGuardUser {
 }
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website"
-const BACKEND_URL = "https://wise-cups-return.loca.lt"
+const BACKEND_URL = "https://leaklens-omega.vercel.app"
 
 function decodeJwtUserOffline(token: string): AuthGuardUser | null {
     try {

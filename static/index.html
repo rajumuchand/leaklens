@@ -1499,6 +1499,8 @@
 
     <!-- PAGE 2: MAIN LINKLENS / SENTINELTRACE WEBSITE (Shown after Auth) -->
     <div class="page-layer" id="mainWebsiteView" style="display:none;">
+        <!-- Fixed Diagonal Security Watermark Layer across Reader View (pointer-events: none, z-index: 9999) -->
+        <div id="globalSecurityWatermark" aria-hidden="true" style="position:fixed; inset:-30%; z-index:9999; pointer-events:none; user-select:none; -webkit-user-select:none; ms-user-select:none; transform:rotate(-22deg); opacity:0.12; display:flex; flex-direction:column; justify-content:space-around; gap:44px; font-family:var(--font-mono); font-size:12px; font-weight:700; color:#FFB627; white-space:nowrap;"></div>
         <!-- SECTION 1: HERO (CUE: HERO -> 3D PARTICLE BRAIN ON RIGHT) -->
         <section id="top" class="hero-section" data-mf-cue="hero" data-mf-tint="#FFB627" data-mf-quiet="0">
             <div class="section-wrap">
@@ -2973,36 +2975,13 @@
         }
 
         const FRAMER_LOGIN_URL = 'https://linklenslogin.framer.website/';
-        const BACKEND_URL = 'https://wise-cups-return.loca.lt';
-        const API_BASE = (
-            window.location.hostname === 'localhost' ||
-            window.location.hostname === '127.0.0.1' ||
-            window.location.origin === BACKEND_URL
-        ) ? '' : BACKEND_URL;
+        const CLIENT_ONLY_MODE = true;
 
         async function apiFetch(path, options = {}) {
-            const buildReqHeaders = (base) => {
-                const headers = new Headers(options.headers || {});
-                if (base.includes('ngrok') && !headers.has('ngrok-skip-browser-warning')) {
-                    headers.set('ngrok-skip-browser-warning', 'true');
-                }
-                if (base.includes('loca.lt') && !headers.has('bypass-tunnel-reminder')) {
-                    headers.set('bypass-tunnel-reminder', 'true');
-                }
-                return headers;
-            };
-            try {
-                const resp = await fetch(`${API_BASE}${path}`, { ...options, headers: buildReqHeaders(API_BASE) });
-                if (API_BASE && (resp.status >= 500 || resp.status === 511) && window.location.hostname.endsWith('.vercel.app')) {
-                    return await fetch(path, { ...options, headers: buildReqHeaders('') });
-                }
-                return resp;
-            } catch (err) {
-                if (API_BASE && window.location.hostname.endsWith('.vercel.app')) {
-                    return await fetch(path, { ...options, headers: buildReqHeaders('') });
-                }
-                throw err;
+            if (CLIENT_ONLY_MODE) {
+                return Promise.reject(new Error('client_only'));
             }
+            return fetch(path, options);
         }
 
         const OFFLINE_CONFIDENTIAL_DOCS = [
@@ -3120,21 +3099,13 @@
             renderViewportWatermark();
         }
 
-        // Ping FastAPI Health Badge (graceful offline fallback)
-        (async function pingHealth() {
+        // Client-Side Engine Health Badge (Zero External API Calls)
+        (function initClientHealthBadge() {
             const badge = document.getElementById('apiHealthBadge');
-            try {
-                const r = await apiFetch('/api/health');
-                if (r.ok && badge) {
-                    const d = await r.json();
-                    badge.innerHTML = `<span class="status-dot"></span><span>API v${d.version || '3.0.0'}</span>`;
-                    return;
-                }
-            } catch {}
             if (badge) {
                 badge.style.borderColor = 'rgba(43,216,200,0.35)';
                 badge.style.color = '#2BD8C8';
-                badge.innerHTML = `<span class="status-dot"></span><span>OFFLINE VAULT READY</span>`;
+                badge.innerHTML = `<span class="status-dot"></span><span>CLIENT VAULT READY</span>`;
             }
         })();
 
@@ -3473,14 +3444,20 @@
         })();
 
         function renderViewportWatermark() {
+            const userIdentity = authedUser?.email || localStorage.getItem('user_email') || 'security_user@leaklens.io';
+            const stamp = `CONFIDENTIAL • ACCESSED BY ${userIdentity} • SESSION ACTIVE`;
             const grid = document.getElementById('viewportWatermarkGrid');
-            if (!grid) return;
-            const userIdentity = authedUser?.email || localStorage.getItem('user_email') || 'authenticated_user';
-            const ts = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-            const stamp = `CONFIDENTIAL • ACCESSED BY ${userIdentity} • ${ts} • SECURE SESSION`;
-            let html = '';
-            for (let i = 0; i < 12; i++) html += `<div>${stamp}</div>`;
-            grid.innerHTML = html;
+            if (grid) {
+                let html = '';
+                for (let i = 0; i < 12; i++) html += `<div>${stamp}</div>`;
+                grid.innerHTML = html;
+            }
+            const globalOverlay = document.getElementById('globalSecurityWatermark');
+            if (globalOverlay) {
+                let gHtml = '';
+                for (let i = 0; i < 7; i++) gHtml += `<div>${`${stamp}   •   `.repeat(4)}</div>`;
+                globalOverlay.innerHTML = gHtml;
+            }
         }
         setInterval(renderViewportWatermark, 30000);
 
@@ -3849,6 +3826,7 @@
             if (mainView) mainView.style.display = 'block';
 
             setAuthenticatedUserUi(user);
+            renderViewportWatermark();
             const navEmail = document.getElementById('navUserEmail');
             if (navEmail && user?.email) {
                 navEmail.textContent = user.email;
@@ -4049,38 +4027,20 @@
                 return;
             }
 
-            // C. Verify token validity with FastAPI GET /api/auth/me (with offline resilient fallback)
-            try {
-                const res = await apiFetch('/api/auth/me', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.status === 401 || res.status === 403) {
-                    localStorage.clear();
-                    window.location.href = buildFramerLoginRedirect();
-                    return;
-                }
-                const data = await res.json().catch(() => ({}));
-                if (res.ok && data.status === 'authenticated' && data.user) {
-                    localStorage.setItem('user_email', data.user.email);
-                    localStorage.setItem('user_name', data.user.name || data.user.email);
-                    const wmRec = document.getElementById('wmRecipient');
-                    if (wmRec && data.user.email) wmRec.value = data.user.email;
-                    unlockMainWebsiteView(data.user);
-                    return;
-                }
-            } catch {
-                // Network / backend unreachable -> fall back cleanly to cached local JWT session
-            }
-
+            // C. Pure client-side session decode & immediate unlock (zero external API fetch calls)
             const offlineDecoded = decodeJwtOffline(token);
             if (offlineDecoded?.expired) {
                 localStorage.clear();
                 window.location.href = buildFramerLoginRedirect();
                 return;
             }
-            const offlineEmail = offlineDecoded?.user?.email || localStorage.getItem('user_email') || 'authenticated_user';
-            const offlineName = offlineDecoded?.user?.name || localStorage.getItem('user_name') || offlineEmail;
-            unlockMainWebsiteView({ email: offlineEmail, name: offlineName, picture: offlineDecoded?.user?.picture || '' });
+            const resolvedEmail = offlineDecoded?.user?.email || localStorage.getItem('user_email') || 'security_user@leaklens.io';
+            const resolvedName = offlineDecoded?.user?.name || localStorage.getItem('user_name') || 'Security User';
+            localStorage.setItem('user_email', resolvedEmail);
+            localStorage.setItem('user_name', resolvedName);
+            const wmRec = document.getElementById('wmRecipient');
+            if (wmRec && resolvedEmail) wmRec.value = resolvedEmail;
+            unlockMainWebsiteView({ email: resolvedEmail, name: resolvedName, picture: offlineDecoded?.user?.picture || '' });
         })();
     </script>
 </body>
