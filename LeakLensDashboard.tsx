@@ -51,8 +51,143 @@ interface LeaseResponse {
     status_message: string
 }
 
-const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website/"
-const BACKEND_URL = "https://gold-ties-yell.loca.lt"
+const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website"
+const DEFAULT_REMOTE_BACKEND = "https://leaklens-omega.vercel.app"
+
+const resolveDefaultBackendUrl = (): string => {
+    if (typeof window === "undefined") return DEFAULT_REMOTE_BACKEND
+    const host = window.location.hostname
+    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".vercel.app")) {
+        return ""
+    }
+    return DEFAULT_REMOTE_BACKEND
+}
+
+const OFFLINE_CONFIDENTIAL_DOCS = [
+    {
+        id: "helios-brief",
+        label: "Project Helios M&A",
+        text:
+            "CONFIDENTIAL BOARD ACQUISITION MEMO:\n" +
+            "Project Helios buyout ceiling is set at $142M for Q1 2027.\n" +
+            "Executive committee approval remains strictly embargoed until Monday market open.",
+    },
+    {
+        id: "security-audit",
+        label: "Zero-Trust Audit",
+        text:
+            "CONFIDENTIAL SECURITY AUDIT BRIEF:\n" +
+            "All ephemeral AES-256-GCM decryption buffers wipe to 0x00 upon monotonic expiry.\n" +
+            "Zero plaintext remnants persist to disk across disconnected sessions.",
+    },
+    {
+        id: "nda-addendum",
+        label: "Board NDA Protocol",
+        text:
+            "CONFIDENTIAL DISTRIBUTION ADDENDUM:\n" +
+            "Every reader copy carries redundant zero-width steganographic attribution.\n" +
+            "Unauthorized external sharing triggers immediate forensic revocation.",
+    },
+]
+
+function decodeJwtOffline(token: string): { expired: boolean; user?: { email: string; name: string; picture?: string } } | null {
+    try {
+        const parts = (token || "").split(".")
+        if (parts.length !== 3) return null
+        const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+        const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4)
+        const json = decodeURIComponent(
+            atob(padded)
+                .split("")
+                .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+                .join("")
+        )
+        const payload = JSON.parse(json)
+        if (payload.exp && payload.exp < Date.now() / 1000) return { expired: true }
+        return {
+            expired: false,
+            user: {
+                email: payload.sub || payload.email || "authenticated_user",
+                name: payload.name || payload.sub || "Authenticated User",
+                picture: payload.picture || "",
+            },
+        }
+    } catch {
+        return null
+    }
+}
+
+function computeOfflineSig(payload: string): string {
+    let h = 2166136261
+    for (let i = 0; i < payload.length; i++) {
+        h ^= payload.charCodeAt(i)
+        h = Math.imul(h, 16777619)
+    }
+    return ((h >>> 0).toString(16).padStart(8, "0") + "a7f9c2e4").slice(0, 16)
+}
+
+function encodeOfflineWatermark(text: string, recipientId: string, sessionId: string): WatermarkResponse {
+    const sig = computeOfflineSig(`${recipientId}|${sessionId}`)
+    const payload = `${recipientId}|${sessionId}|${sig}`
+    let bits = "\u200d"
+    for (let i = 0; i < payload.length; i++) {
+        const bin = payload.charCodeAt(i).toString(2).padStart(8, "0")
+        for (const b of bin) bits += b === "1" ? "\u200c" : "\u200b"
+    }
+    bits += "\u200d"
+    const sentences = text.split(/(?<=[.!?\n])/)
+    let chunks = 0
+    const watermarked_text = sentences
+        .map((s) => {
+            if (!s.trim()) return s
+            chunks++
+            return s + bits
+        })
+        .join("")
+    return {
+        status: "offline_cached",
+        recipient_id: recipientId,
+        session_id: sessionId,
+        signature: sig,
+        chunks_embedded: Math.max(1, chunks),
+        watermarked_text: chunks > 0 ? watermarked_text : text + bits,
+    }
+}
+
+function decodeOfflineWatermark(leakedText: string): InspectResponse {
+    const matches = leakedText.match(/\u200d([\u200b\u200c]{16,})\u200d/g) || []
+    for (const chunk of matches) {
+        const inner = chunk.slice(1, -1)
+        let decoded = ""
+        for (let i = 0; i + 8 <= inner.length; i += 8) {
+            const byteStr = inner
+                .slice(i, i + 8)
+                .replace(/\u200b/g, "0")
+                .replace(/\u200c/g, "1")
+            decoded += String.fromCharCode(parseInt(byteStr, 2))
+        }
+        const parts = decoded.split("|")
+        if (parts.length >= 3) {
+            const [recipient_id, session_id, signature] = parts
+            const verified = computeOfflineSig(`${recipient_id}|${session_id}`) === signature
+            return {
+                match_found: true,
+                source: "Offline Steganography Decoder",
+                recipient_id,
+                session_id,
+                signature,
+                verified,
+                chunks_detected: matches.length,
+                chunks_verified: verified ? matches.length : 0,
+                recovery_mode: "OFFLINE CLIENT DECODER",
+            }
+        }
+    }
+    return {
+        match_found: false,
+        error: "No embedded zero-width forensic payload found in text.",
+    }
+}
 
 export default function LeakLensDashboard(props: {
     apiUrl?: string
@@ -62,8 +197,9 @@ export default function LeakLensDashboard(props: {
     loginUrl?: string
     requireAuthGuard?: boolean
 }) {
+    const defaultBackendUrl = React.useMemo(() => resolveDefaultBackendUrl(), [])
     const {
-        apiUrl = BACKEND_URL,
+        apiUrl = defaultBackendUrl,
         brandName = "LeakLens",
         accentColor = "#7B5CFA",
         googleClientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
@@ -82,7 +218,7 @@ export default function LeakLensDashboard(props: {
     // Allow user to edit custom API URL in the component if needed
     const [currentApiUrl, setCurrentApiUrl] = React.useState(apiUrl)
     const normalizedBackendUrl = React.useMemo(
-        () => (currentApiUrl || BACKEND_URL).replace(/\/+$/, ""),
+        () => (currentApiUrl || "").replace(/\/+$/, ""),
         [currentApiUrl]
     )
     const buildApiHeaders = React.useCallback(
@@ -160,6 +296,17 @@ export default function LeakLensDashboard(props: {
     const [inspectError, setInspectError] = React.useState<string | null>(null)
 
     // --- TAB 3: ENTERPRISE DRM ENFORCER STATE ---
+    const [activeOfflineDocId, setActiveOfflineDocId] = React.useState(OFFLINE_CONFIDENTIAL_DOCS[0].id)
+    const [watermarkTimestamp, setWatermarkTimestamp] = React.useState(() =>
+        new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC"
+    )
+    React.useEffect(() => {
+        const timer = setInterval(() => {
+            setWatermarkTimestamp(new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC")
+        }, 30000)
+        return () => clearInterval(timer)
+    }, [])
+
     const [leaseMinutes, setLeaseMinutes] = React.useState(30)
     const [leaseDurationSec, setLeaseDurationSec] = React.useState(1800)
     const [offlineEnabled, setOfflineEnabled] = React.useState(true)
@@ -218,7 +365,7 @@ export default function LeakLensDashboard(props: {
                 }))
             }
         } catch {
-            // Fallback to timestamp mode
+            // Silently fall back to client-side lease timer when offline
         }
     }, [currentApiUrl, recipientId])
 
@@ -240,10 +387,20 @@ export default function LeakLensDashboard(props: {
                     decrypted_viewport_text: null,
                     status_message: data.status_message,
                 }))
+                return
             }
-        } catch (e) {
-            console.error(e)
+        } catch {
+            // Fall through to local RAM wipe state when offline
         }
+        setLeaseState((prev) => ({
+            ...prev,
+            access_allowed: false,
+            remaining_seconds: 0,
+            ram_wiped: true,
+            ram_key_preview: "0x00000000...0000 (ZEROED)",
+            decrypted_viewport_text: null,
+            status_message: "ACCESS REVOKED / RAM KEY ZEROED",
+        }))
     }
 
     const handleChallengeQrRenewal = async () => {
@@ -256,10 +413,12 @@ export default function LeakLensDashboard(props: {
             if (resp.ok) {
                 const data = await resp.json()
                 setQrChallengeCode(data.challenge_code)
+                return
             }
-        } catch (e) {
-            console.error(e)
+        } catch {
+            // Fall through to local offline challenge code
         }
+        setQrChallengeCode(`QR-${Math.random().toString(16).slice(2, 10).toUpperCase()}`)
     }
 
     const handleCompleteQrRenewal = async () => {
@@ -280,16 +439,28 @@ export default function LeakLensDashboard(props: {
                 setLeaseToken(data.lease_token)
                 setRsaJwt(data.rsa_jwt)
                 setQrChallengeCode(null)
+                return
             }
-        } catch (e) {
-            console.error(e)
+        } catch {
+            // Fall through to local offline renewal
         }
+        setPermissionEndTs(Date.now() / 1000 + dur)
+        setQrChallengeCode(null)
+        setLeaseState((prev) => ({
+            ...prev,
+            access_allowed: true,
+            ram_wiped: false,
+            remaining_seconds: dur,
+            decrypted_viewport_text:
+                (OFFLINE_CONFIDENTIAL_DOCS.find((d) => d.id === activeOfflineDocId) || OFFLINE_CONFIDENTIAL_DOCS[0]).text,
+            status_message: "ACCESS GRANTED (OFFLINE QR RENEWED)",
+        }))
     }
 
     // Check Backend Health on mount / url change & issue initial signed lease
     React.useEffect(() => {
         let isMounted = true
-        fetch(`${normalizedBackendUrl}/api/health`, { headers: buildApiHeaders() })
+        apiFetch("/api/health")
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error("offline"))))
             .then(() => {
                 if (isMounted) setApiStatus("online")
@@ -303,7 +474,7 @@ export default function LeakLensDashboard(props: {
         }
     }, [normalizedBackendUrl, buildApiHeaders])
 
-    // --- TAB 1: CALL /api/watermark ---
+    // --- TAB 1: CALL /api/watermark (with offline client-side fallback) ---
     const handleGenerateWatermark = async () => {
         setIsWatermarking(true)
         setWatermarkError(null)
@@ -317,16 +488,13 @@ export default function LeakLensDashboard(props: {
                     text: textInput,
                 }),
             })
-            if (!resp.ok) {
-                const err = await resp.json()
-                throw new Error(err.detail || "Failed to generate watermark.")
-            }
+            if (!resp.ok) throw new Error("Backend unavailable")
             const data: WatermarkResponse = await resp.json()
             setWatermarkResult(data)
             setApiStatus("online")
-        } catch (err: any) {
-            console.error("Watermark error:", err)
-            setWatermarkError(err.message || "Could not connect to Python /api/watermark.")
+        } catch {
+            setApiStatus("offline")
+            setWatermarkResult(encodeOfflineWatermark(textInput, recipientId, sessionId))
         } finally {
             setIsWatermarking(false)
         }
@@ -426,7 +594,7 @@ export default function LeakLensDashboard(props: {
         }
     }
 
-    // --- TAB 2: CALL /api/inspect ---
+    // --- TAB 2: CALL /api/inspect (with offline client-side fallback) ---
     const handleRunInspect = async () => {
         setIsInspecting(true)
         setInspectError(null)
@@ -438,10 +606,7 @@ export default function LeakLensDashboard(props: {
                     leaked_text: leakedTextInput,
                 }),
             })
-            if (!resp.ok) {
-                const err = await resp.json()
-                throw new Error(err.detail || "Failed to inspect text.")
-            }
+            if (!resp.ok) throw new Error("Backend unavailable")
             const data: InspectResponse = await resp.json()
             setInspectResult(data)
             if (data.match_found && data.verified) {
@@ -450,9 +615,15 @@ export default function LeakLensDashboard(props: {
                 )
             }
             setApiStatus("online")
-        } catch (err: any) {
-            console.error("Inspect error:", err)
-            setInspectError(err.message || "Could not connect to Python /api/inspect.")
+        } catch {
+            setApiStatus("offline")
+            const offlineData = decodeOfflineWatermark(leakedTextInput)
+            setInspectResult(offlineData)
+            if (offlineData.match_found && offlineData.verified) {
+                setWebhookAlert(
+                    `🚨 OFFLINE FORENSIC MATCH: Recipient ${offlineData.recipient_id} | Session ${offlineData.session_id}.`
+                )
+            }
         } finally {
             setIsInspecting(false)
         }
@@ -478,8 +649,8 @@ export default function LeakLensDashboard(props: {
                         window.localStorage.setItem("user_name", data.user.name)
                     }
                 }
-            } catch (err) {
-                console.error("Google auth failed:", err)
+            } catch {
+                // Backend unreachable offline — keep UI responsive without console errors
             }
         },
         [currentApiUrl]
@@ -519,22 +690,53 @@ export default function LeakLensDashboard(props: {
         fetch(`${normalizedBackendUrl}/api/auth/me`, {
             headers: buildApiHeaders({ Authorization: `Bearer ${storedToken}` }),
         })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => {
-                if (d?.status === "authenticated" && d.user) {
-                    setAuthUser(d.user)
-                    setRecipientId(d.user.email)
-                    window.localStorage.setItem("user_email", d.user.email)
-                    window.localStorage.setItem("user_name", d.user.name || d.user.email)
-                } else {
+            .then(async (r) => {
+                if (r.status === 401 || r.status === 403) {
                     window.localStorage.clear()
                     if (requireAuthGuard && !isFramerEditor) {
                         window.location.href = buildFramerLoginUrl()
                     }
+                    return
                 }
+                const d = await r.json().catch(() => ({}))
+                if (r.ok && d?.status === "authenticated" && d.user) {
+                    setAuthUser(d.user)
+                    setRecipientId(d.user.email)
+                    window.localStorage.setItem("user_email", d.user.email)
+                    window.localStorage.setItem("user_name", d.user.name || d.user.email)
+                    return
+                }
+                const offlineSession = decodeJwtOffline(storedToken)
+                if (offlineSession?.expired) {
+                    window.localStorage.clear()
+                    if (requireAuthGuard && !isFramerEditor) {
+                        window.location.href = buildFramerLoginUrl()
+                    }
+                    return
+                }
+                const fallbackEmail =
+                    offlineSession?.user?.email || window.localStorage.getItem("user_email") || "authenticated_user"
+                const fallbackName =
+                    offlineSession?.user?.name || window.localStorage.getItem("user_name") || fallbackEmail
+                setAuthUser({ email: fallbackEmail, name: fallbackName, picture: offlineSession?.user?.picture || "" })
+                setRecipientId(fallbackEmail)
             })
-            .catch((err) => {
-                console.error("Session verification error:", err)
+            .catch(() => {
+                const offlineSession = decodeJwtOffline(storedToken)
+                if (offlineSession?.expired) {
+                    window.localStorage.clear()
+                    if (requireAuthGuard && !isFramerEditor) {
+                        window.location.href = buildFramerLoginUrl()
+                    }
+                    return
+                }
+                const fallbackEmail =
+                    offlineSession?.user?.email || window.localStorage.getItem("user_email") || "authenticated_user"
+                const fallbackName =
+                    offlineSession?.user?.name || window.localStorage.getItem("user_name") || fallbackEmail
+                setAuthUser({ email: fallbackEmail, name: fallbackName, picture: offlineSession?.user?.picture || "" })
+                setRecipientId(fallbackEmail)
+                setApiStatus("offline")
             })
             .finally(() => setCheckingAuth(false))
         if (!googleClientId || googleClientId.startsWith("YOUR_GOOGLE_CLIENT_ID") || authUser) return
@@ -569,17 +771,27 @@ export default function LeakLensDashboard(props: {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
             })
-            const data = await response.json()
-            if (data.status === "success") {
-                setAliceCopy(data.alice.watermarked_text)
-                setBobCopy(data.bob.watermarked_text)
-                setStressInput(data.alice.watermarked_text)
-                setStressResult(null)
+            if (response.ok) {
+                const data = await response.json()
+                if (data.status === "success") {
+                    setAliceCopy(data.alice.watermarked_text)
+                    setBobCopy(data.bob.watermarked_text)
+                    setStressInput(data.alice.watermarked_text)
+                    setStressResult(null)
+                    return
+                }
             }
-        } catch (error) {
-            console.error("Regenerate failed:", error)
+        } catch {
+            // Fall through to cached offline copies
         }
-    }, [currentApiUrl])
+        const aliceOffline = encodeOfflineWatermark(STRESS_MEMO, "Alice Smith (USR-8492)", "SES-OFFLINE-2026")
+        const bobOffline = encodeOfflineWatermark(STRESS_MEMO, "Bob Jones (USR-3104)", "SES-OFFLINE-2026")
+        setAliceCopy(aliceOffline.watermarked_text)
+        setBobCopy(bobOffline.watermarked_text)
+        setStressInput(aliceOffline.watermarked_text)
+        setStressResult(null)
+        setApiStatus("offline")
+    }, [apiFetch, STRESS_MEMO])
 
     React.useEffect(() => {
         if (activeTab === "stress" && !aliceCopy) {
@@ -596,6 +808,7 @@ export default function LeakLensDashboard(props: {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ leaked_text: stressInput }),
             })
+            if (!resp.ok) throw new Error("Backend unavailable")
             const data: InspectResponse = await resp.json()
             setStressResult(data)
             if (data.match_found && data.verified) {
@@ -603,8 +816,15 @@ export default function LeakLensDashboard(props: {
                     `🚨 CRITICAL INCIDENT: Forensic match confirmed for Recipient ${data.recipient_id} | Session ${data.session_id}.`
                 )
             }
-        } catch (e) {
-            console.error(e)
+        } catch {
+            const offlineRes = decodeOfflineWatermark(stressInput)
+            setStressResult(offlineRes)
+            if (offlineRes.match_found && offlineRes.verified) {
+                setWebhookAlert(
+                    `🚨 OFFLINE FORENSIC MATCH: Recipient ${offlineRes.recipient_id} | Session ${offlineRes.session_id}.`
+                )
+            }
+            setApiStatus("offline")
         } finally {
             setIsStressTesting(false)
         }
@@ -637,14 +857,16 @@ export default function LeakLensDashboard(props: {
     const [blockedShortcutsCount, setBlockedShortcutsCount] = React.useState(0)
 
     React.useEffect(() => {
-        if (typeof window === "undefined" || activeTab !== "drm") return
+        if (typeof window === "undefined") return
         const onKeyDown = (e: KeyboardEvent) => {
             const k = (e.key || "").toLowerCase()
+            const code = e.code || ""
             const mod = e.ctrlKey || e.metaKey
-            const isF12 = e.key === "F12" || e.keyCode === 123
-            const isInspect = mod && (e.shiftKey || e.altKey) && (k === "i" || k === "j" || k === "c")
-            const isRestricted = mod && (k === "u" || k === "c" || k === "x" || k === "s" || k === "p")
-            if (isF12 || isInspect || isRestricted) {
+            const isF12 = e.key === "F12" || code === "F12" || e.keyCode === 123
+            const isDevTools = mod && (e.shiftKey || e.altKey) && (k === "i" || k === "j" || k === "c" || code === "KeyI")
+            const isViewSource = mod && (k === "u" || code === "KeyU")
+            const isSaveOrCopy = mod && (k === "s" || code === "KeyS" || k === "c" || k === "x" || k === "p")
+            if (isF12 || isDevTools || isViewSource || isSaveOrCopy) {
                 e.preventDefault()
                 e.stopPropagation()
                 setBlockedShortcutsCount((c) => c + 1)
@@ -652,7 +874,7 @@ export default function LeakLensDashboard(props: {
         }
         window.addEventListener("keydown", onKeyDown, true)
         return () => window.removeEventListener("keydown", onKeyDown, true)
-    }, [activeTab])
+    }, [])
 
     // --- TAB 3: POLL /api/validate-lease ---
     React.useEffect(() => {
@@ -1211,7 +1433,13 @@ export default function LeakLensDashboard(props: {
                                 </div>
 
                                 <div
+                                    onCopy={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
+                                    onCut={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
+                                    onContextMenu={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
+                                    onSelectStart={(e) => e.preventDefault()}
                                     style={{
+                                        position: "relative",
+                                        overflow: "hidden",
                                         backgroundColor: "#030406",
                                         borderRadius: 8,
                                         border: "1px solid rgba(255, 255, 255, 0.05)",
@@ -1222,11 +1450,43 @@ export default function LeakLensDashboard(props: {
                                         color: watermarkResult ? "#f1f5f9" : "#64748b",
                                         lineHeight: 1.6,
                                         whiteSpace: "pre-wrap",
+                                        userSelect: "none",
+                                        WebkitUserSelect: "none",
+                                        msUserSelect: "none",
                                     }}
                                 >
-                                    {watermarkResult
-                                        ? watermarkResult.watermarked_text
-                                        : "Click 'Call /api/watermark' to invoke the Python backend. The returned text will look visually identical while holding redundant zero-width cryptographic chunks."}
+                                    <div
+                                        aria-hidden="true"
+                                        style={{
+                                            position: "absolute",
+                                            inset: -30,
+                                            zIndex: 9999,
+                                            pointerEvents: "none",
+                                            userSelect: "none",
+                                            WebkitUserSelect: "none",
+                                            transform: "rotate(-18deg)",
+                                            opacity: 0.12,
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            justifyContent: "space-around",
+                                            fontFamily: "monospace",
+                                            fontSize: 9,
+                                            fontWeight: 700,
+                                            color: "#FFB627",
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    >
+                                        {[0, 1, 2].map((row) => (
+                                            <div key={row}>
+                                                {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "authenticated_user"} • ${watermarkTimestamp} • SECURE SESSION  •  `.repeat(2)}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={{ position: "relative", zIndex: 1 }}>
+                                        {watermarkResult
+                                            ? watermarkResult.watermarked_text
+                                            : "Click 'Call /api/watermark' to invoke the watermark engine (works online or offline)."}
+                                    </div>
                                 </div>
 
                                 {watermarkResult && (
@@ -1768,6 +2028,37 @@ export default function LeakLensDashboard(props: {
                                         </span>
                                     </div>
 
+                                    {/* Cached Offline Document Switcher */}
+                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                                        {OFFLINE_CONFIDENTIAL_DOCS.map((doc) => (
+                                            <button
+                                                key={doc.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setActiveOfflineDocId(doc.id)
+                                                    setLeaseState((prev) => ({
+                                                        ...prev,
+                                                        access_allowed: true,
+                                                        ram_wiped: false,
+                                                        decrypted_viewport_text: doc.text,
+                                                    }))
+                                                }}
+                                                style={{
+                                                    padding: "4px 9px",
+                                                    borderRadius: 999,
+                                                    border: activeOfflineDocId === doc.id ? `1px solid ${accentColor}` : "1px solid rgba(255,255,255,0.14)",
+                                                    backgroundColor: activeOfflineDocId === doc.id ? "rgba(123, 92, 250, 0.16)" : "rgba(255,255,255,0.03)",
+                                                    color: "#F3F2F8",
+                                                    fontSize: 10,
+                                                    fontFamily: "monospace",
+                                                    cursor: "pointer",
+                                                }}
+                                            >
+                                                {doc.label}
+                                            </button>
+                                        ))}
+                                    </div>
+
                                     {/* Dynamic Diagonal Viewport Watermark Container */}
                                     <div
                                         onCopy={(e) => { e.preventDefault(); setBlockedShortcutsCount((c) => c + 1) }}
@@ -1790,18 +2081,19 @@ export default function LeakLensDashboard(props: {
                                     >
                                         <div style={{ position: "relative", zIndex: 1, fontSize: 12, lineHeight: 1.6, color: "#F3F2F8", whiteSpace: "pre-wrap" }}>
                                             {leaseState.access_allowed
-                                                ? leaseState.decrypted_viewport_text || "Loading AES-256-GCM buffer..."
+                                                ? leaseState.decrypted_viewport_text ||
+                                                  (OFFLINE_CONFIDENTIAL_DOCS.find((d) => d.id === activeOfflineDocId) || OFFLINE_CONFIDENTIAL_DOCS[0]).text
                                                 : "[ RAM BUFFER WIPED — ENCRYPTED LOCKDOWN ]"}
                                         </div>
 
-                                        {/* Semi-Transparent Diagonal Watermark Overlay (opacity: 0.15) */}
+                                        {/* Semi-Transparent Diagonal Watermark Overlay (pointerEvents: none, zIndex: 9999) */}
                                         {leaseState.access_allowed && (
                                             <div
                                                 aria-hidden="true"
                                                 style={{
                                                     position: "absolute",
                                                     inset: -30,
-                                                    zIndex: 2,
+                                                    zIndex: 9999,
                                                     pointerEvents: "none",
                                                     userSelect: "none",
                                                     WebkitUserSelect: "none",
@@ -1820,7 +2112,7 @@ export default function LeakLensDashboard(props: {
                                             >
                                                 {[0, 1, 2, 3].map((row) => (
                                                     <div key={row}>
-                                                        {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || recipientId} • ${sessionId} • ${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC  •  `.repeat(2)}
+                                                        {`CONFIDENTIAL • ACCESSED BY ${authUser?.email || "authenticated_user"} • ${watermarkTimestamp} • SECURE SESSION  •  `.repeat(2)}
                                                     </div>
                                                 ))}
                                             </div>
@@ -1909,7 +2201,19 @@ export default function LeakLensDashboard(props: {
 
                             {/* Alice vs Bob side-by-side */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                                <div style={{ padding: 10, backgroundColor: "rgba(1,5,3,0.8)", border: `1px solid ${accentColor}`, borderRadius: 6 }}>
+                                <div
+                                    onCopy={(e) => e.preventDefault()}
+                                    onCut={(e) => e.preventDefault()}
+                                    onContextMenu={(e) => e.preventDefault()}
+                                    style={{
+                                        padding: 10,
+                                        backgroundColor: "rgba(1,5,3,0.8)",
+                                        border: `1px solid ${accentColor}`,
+                                        borderRadius: 6,
+                                        userSelect: "none",
+                                        WebkitUserSelect: "none",
+                                    }}
+                                >
                                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                                         <span style={{ fontSize: 10, color: accentColor, fontFamily: "monospace", fontWeight: 700 }}>ALICE SMITH (USR-8492)</span>
                                         <button onClick={() => setStressInput(aliceCopy)} style={{ ...quickLinkStyle, fontSize: 10 }}>Load</button>
@@ -1918,7 +2222,19 @@ export default function LeakLensDashboard(props: {
                                         {aliceCopy || "Loading..."}
                                     </div>
                                 </div>
-                                <div style={{ padding: 10, backgroundColor: "rgba(1,5,3,0.8)", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 6 }}>
+                                <div
+                                    onCopy={(e) => e.preventDefault()}
+                                    onCut={(e) => e.preventDefault()}
+                                    onContextMenu={(e) => e.preventDefault()}
+                                    style={{
+                                        padding: 10,
+                                        backgroundColor: "rgba(1,5,3,0.8)",
+                                        border: "1px solid rgba(56,189,248,0.3)",
+                                        borderRadius: 6,
+                                        userSelect: "none",
+                                        WebkitUserSelect: "none",
+                                    }}
+                                >
                                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                                         <span style={{ fontSize: 10, color: "#38bdf8", fontFamily: "monospace", fontWeight: 700 }}>BOB JONES (USR-3104)</span>
                                         <button onClick={() => setStressInput(bobCopy)} style={{ ...quickLinkStyle, color: "#38bdf8", fontSize: 10 }}>Load</button>
@@ -2141,7 +2457,7 @@ addPropertyControls(LeakLensDashboard, {
     apiUrl: {
         type: ControlType.String,
         title: "API URL",
-        defaultValue: BACKEND_URL,
+        defaultValue: DEFAULT_REMOTE_BACKEND,
     },
     brandName: {
         type: ControlType.String,

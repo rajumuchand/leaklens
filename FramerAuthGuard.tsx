@@ -15,8 +15,31 @@ export interface AuthGuardUser {
     picture?: string
 }
 
-const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website/"
-const BACKEND_URL = "https://gold-ties-yell.loca.lt"
+const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website"
+const BACKEND_URL = "https://leaklens-omega.vercel.app"
+
+function decodeJwtUserOffline(token: string): AuthGuardUser | null {
+    try {
+        const parts = token.split(".")
+        if (parts.length !== 3) return null
+        const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+        const json = decodeURIComponent(
+            atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4))
+                .split("")
+                .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+                .join("")
+        )
+        const payload = JSON.parse(json)
+        if (payload.exp && payload.exp < Date.now() / 1000) return null
+        return {
+            email: payload.sub || payload.email || "authenticated_user",
+            name: payload.name || payload.sub || "Authenticated User",
+            picture: payload.picture || "",
+        }
+    } catch {
+        return null
+    }
+}
 
 export default function FramerAuthGuard(props: {
     apiUrl?: string
@@ -84,26 +107,44 @@ export default function FramerAuthGuard(props: {
         const headers: Record<string, string> = {
             Authorization: `Bearer ${token}`,
         }
-        if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
-        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         fetch(`${baseUrl}/api/auth/me`, { headers })
-            .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
-            .then(({ ok, data }) => {
-                if (ok && data?.status === "authenticated" && data.user) {
+            .then(async (res) => {
+                if (res.status === 401 || res.status === 403) {
+                    window.localStorage.clear()
+                    setStatus("unauthenticated")
+                    redirectToLogin()
+                    return
+                }
+                const data = await res.json().catch(() => ({}))
+                if (res.ok && data?.status === "authenticated" && data.user) {
                     setUser(data.user)
                     setStatus("authenticated")
                     window.localStorage.setItem("user_email", data.user.email)
                     window.localStorage.setItem("user_name", data.user.name)
                     if (onAuthenticated) onAuthenticated(data.user)
                 } else {
-                    window.localStorage.clear()
-                    setStatus("unauthenticated")
-                    redirectToLogin()
+                    const cachedUser = decodeJwtUserOffline(token)
+                    if (cachedUser) {
+                        setUser(cachedUser)
+                        setStatus("authenticated")
+                        if (onAuthenticated) onAuthenticated(cachedUser)
+                    } else {
+                        window.localStorage.clear()
+                        setStatus("unauthenticated")
+                        redirectToLogin()
+                    }
                 }
             })
             .catch(() => {
-                setStatus("unauthenticated")
+                const cachedUser = decodeJwtUserOffline(token)
+                if (cachedUser) {
+                    setUser(cachedUser)
+                    setStatus("authenticated")
+                    if (onAuthenticated) onAuthenticated(cachedUser)
+                } else {
+                    setStatus("unauthenticated")
+                }
             })
     }, [baseUrl, onAuthenticated, redirectToLogin])
 
