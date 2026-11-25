@@ -594,7 +594,7 @@ def generate_watermarked_pdf_bytes(text: str, recipient_id: str, session_id: str
     # Invisible Vector Layer (0.0 alpha + micro text embedded in PDF content stream)
     c.saveState()
     c.setFillAlpha(0.0)
-    c.setFont("Helvetica", 1)
+    c.setFont(_UNICODE_FONT_NAME, 1)
     c.drawString(10, 10, proof_tag)
     c.drawString(10, 14, watermarked_text)
     c.restoreState()
@@ -640,12 +640,18 @@ def inspect_pdf_bytes(pdf_bytes: bytes) -> dict:
 
     extracted_text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    # Check 1: Invisible Vector Layer proof tag
-    vector_match = re.search(r"SENTINELTRACE_PROOF:([^\n\r|]+)\|([^\n\r|]+)\|([a-f0-9]{8})", extracted_text)
-    vector_layer_found = vector_match is not None
+    # Check 1: Invisible Vector Layer proof tag (prefer latest layer or metadata-matching proof)
+    vector_matches = re.findall(r"SENTINELTRACE_PROOF:([^\n\r|]+)\|([^\n\r|]+)\|([a-f0-9]{8})", extracted_text)
+    vector_layer_found = len(vector_matches) > 0
 
-    if vector_match:
-        r_id, s_id, sig = vector_match.groups()
+    if vector_matches:
+        chosen = vector_matches[-1]
+        if proof_meta:
+            for m in reversed(vector_matches):
+                if f"{m[0]}|{m[1]}|{m[2]}" == str(proof_meta):
+                    chosen = m
+                    break
+        r_id, s_id, sig = chosen
         expected = create_hmac(f"{r_id}|{s_id}")
         return {
             "match_found": True,
