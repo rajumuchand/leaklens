@@ -1205,10 +1205,10 @@
         }
 
         /* ==============================================================
-           PRINCIPLES + CONTACT REFORM + FOOTER
+           PRINCIPLES
            ============================================================== */
         .principles-section {
-            padding: 90px 0;
+            padding: 90px 0 120px;
             text-align: center;
         }
 
@@ -1230,38 +1230,6 @@
             font-weight: 500;
             letter-spacing: -0.02em;
             color: var(--text-primary);
-        }
-
-        .contact-section {
-            min-height: 68vh;
-            padding: 100px 0 70px;
-            display: flex;
-            align-items: center;
-        }
-
-        .site-footer {
-            width: 100%;
-            max-width: 1440px;
-            margin: 0 auto;
-            padding: 34px 100px 44px;
-            border-top: 1px solid var(--border-subtle);
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-            color: var(--text-muted);
-            font-size: 13px;
-        }
-
-        .footer-links {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 26px;
-        }
-
-        .footer-links a:hover {
-            color: var(--gold);
         }
 
         /* ==============================================================
@@ -1363,7 +1331,7 @@
            RESPONSIVE BREAKPOINTS (MATCHING LEAKLENS.FRAMER.AI)
            ============================================================== */
         @media (max-width: 1199.98px) {
-            .nav-wrap, .section-wrap, .site-footer { padding-left: 40px; padding-right: 40px; }
+            .nav-wrap, .section-wrap { padding-left: 40px; padding-right: 40px; }
             .scroll-hint { left: 40px; }
             .hero-content { width: 100%; max-width: 620px; }
             .hero-section { justify-content: flex-start; padding-top: 112px; }
@@ -1372,7 +1340,7 @@
         }
 
         @media (max-width: 809.98px) {
-            .nav-wrap, .section-wrap, .site-footer { padding-left: 20px; padding-right: 20px; }
+            .nav-wrap, .section-wrap { padding-left: 20px; padding-right: 20px; }
             .scroll-hint { display: none; }
             .nav-links { display: none; }
             .tab-panel { padding: 20px; }
@@ -1572,10 +1540,6 @@
                         </div>
                         <h2 class="display-section">Generate. Inspect. Enforce.</h2>
                     </div>
-                    <p class="muted-copy" style="max-width:440px;">
-                        Connected live to the FastAPI cryptographic engine on localhost:8000 and mirrored at
-                        <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener" style="color:var(--gold); text-decoration:underline;">leaklens.framer.ai</a>.
-                    </p>
                 </div>
 
                 <div class="console-shell mf-rv">
@@ -2316,39 +2280,6 @@
                 </div>
             </div>
         </section>
-
-        <!-- SECTION 9: CONTACT / REFORM BRAIN CTA -->
-        <section id="contact" class="contact-section" data-mf-cue="reform" data-mf-tint="#FFB627" data-mf-quiet="1">
-            <div class="section-wrap">
-                <div style="max-width:600px; display:flex; flex-direction:column; gap:18px;" class="mf-rv">
-                    <div class="kicker">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#FFB627" stroke-width="1.5" stroke-linejoin="round"/>
-                        </svg>
-                        <span>Deploy &amp; Connect</span>
-                    </div>
-                    <h2 class="display-xl">Trace everything.</h2>
-                    <p class="lead-copy">
-                        Launch the interactive forensic workspace or visit the companion Framer showcase at
-                        <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener" style="color:var(--gold); text-decoration:underline;">https://leaklens.framer.ai/</a>.
-                    </p>
-                    <div class="hero-actions" style="margin-top:8px;">
-                        <a href="#engine" class="lt-pill">Back to Live Engine ↑</a>
-                        <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener" class="lt-pill secondary">Open leaklens.framer.ai ↗</a>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- FOOTER -->
-        <footer class="site-footer">
-            <div>© 2026 LeakLens · SentinelTrace Forensic &amp; Offline DRM Engine</div>
-            <div class="footer-links">
-                <a href="https://leaklens.framer.ai/" target="_blank" rel="noopener">leaklens.framer.ai</a>
-                <a href="/api/health" target="_blank" rel="noopener">API Health</a>
-                <a href="/docs" target="_blank" rel="noopener">FastAPI OpenAPI Docs</a>
-            </div>
-        </footer>
     </div>
 
     <script>
