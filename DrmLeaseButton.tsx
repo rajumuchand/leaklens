@@ -38,7 +38,7 @@ export default function DrmLeaseButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://pretty-rabbits-stand.loca.lt",
+        apiUrl = "https://gold-ties-yell.loca.lt",
         leaseSeconds = 30,
         buttonLabel = "Reset / Renew Lease",
         autoPoll = true,
@@ -260,7 +260,7 @@ addPropertyControls(DrmLeaseButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://pretty-rabbits-stand.loca.lt",
+        defaultValue: "https://gold-ties-yell.loca.lt",
     },
     leaseSeconds: {
         type: ControlType.Number,

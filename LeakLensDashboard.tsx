@@ -52,7 +52,7 @@ interface LeaseResponse {
 }
 
 const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website/"
-const BACKEND_URL = "https://pretty-rabbits-stand.loca.lt"
+const BACKEND_URL = "https://gold-ties-yell.loca.lt"
 
 export default function LeakLensDashboard(props: {
     apiUrl?: string
