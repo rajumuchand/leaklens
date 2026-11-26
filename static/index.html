@@ -1455,6 +1455,23 @@
 
             <div id="google-login-btn" style="margin: 8px 0 4px; min-height: 44px; display:flex; align-items:center; justify-content:center;"></div>
 
+            <div style="width:100%; display:flex; align-items:center; gap:10px; margin:2px 0; color:var(--text-muted); font-size:11px; font-family:var(--font-mono);">
+                <div style="flex:1; height:1px; background:var(--border-subtle);"></div>
+                <span>OR SUPABASE AUTH</span>
+                <div style="flex:1; height:1px; background:var(--border-subtle);"></div>
+            </div>
+
+            <form onsubmit="event.preventDefault(); submitLoginCardSupabase();" style="width:100%; display:flex; flex-direction:column; gap:10px;">
+                <input id="loginCardEmail" class="glass-input" type="email" required placeholder="operator@company.com" autocomplete="email" />
+                <input id="loginCardPassword" class="glass-input" type="password" required minlength="6" placeholder="Password (min 6 characters)" autocomplete="current-password" />
+                <button type="submit" id="loginCardSubmitBtn" class="lt-pill sm" style="width:100%; justify-content:center;">Sign In with Supabase</button>
+            </form>
+
+            <div style="width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <button type="button" id="installLoginBtn" class="lt-pill sm teal" onclick="triggerPwaInstall()" style="font-size:11.5px;">+ Install Mobile App</button>
+                <a href="https://linklenslogin.framer.website/" target="_blank" rel="noopener" style="font-size:11.5px; color:var(--text-muted); text-decoration:underline;">External Framer Login ↗</a>
+            </div>
+
             <div id="loginErrorMsg" style="display:none; font-family:var(--font-mono); font-size:12px; color:#FF8DA1; background:rgba(255,59,92,0.12); border:1px solid rgba(255,59,92,0.4); border-radius:12px; padding:10px 14px; width:100%;"></div>
 
             <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:6px;">
@@ -3364,7 +3381,7 @@
 
         function updateInstallButtonsVisibility() {
             const installed = isRunningStandalonePwa();
-            for (const id of ['installNavBtn', 'installHeroBtn']) {
+            for (const id of ['installNavBtn', 'installHeroBtn', 'installLoginBtn']) {
                 const btn = document.getElementById(id);
                 if (btn) btn.style.display = installed ? 'none' : 'inline-flex';
             }
@@ -4157,19 +4174,63 @@
         let GOOGLE_CLIENT_ID = (storedClientId && !storedClientId.startsWith('YOUR_GOOGLE_CLIENT_ID')) ? storedClientId : DEFAULT_GOOGLE_CLIENT_ID;
         let authedUser = null;
 
+        let activeLoginMode = 'signin';
         function switchLoginMode(mode) {
+            activeLoginMode = mode === 'register' ? 'register' : 'signin';
             const sub = document.getElementById('loginSubtitle');
             const sBtn = document.getElementById('modeSignInBtn');
             const rBtn = document.getElementById('modeRegisterBtn');
+            const submitBtn = document.getElementById('loginCardSubmitBtn');
             if (!sub || !sBtn || !rBtn) return;
-            if (mode === 'register') {
+            if (activeLoginMode === 'register') {
                 sBtn.classList.remove('active');
                 rBtn.classList.add('active');
-                sub.textContent = 'Register with your Gmail identity to bind forensic attribution keys and create your SentinelTrace workspace session.';
+                sub.textContent = 'Register with Google or Supabase Email to bind forensic attribution keys and create your workspace session.';
+                if (submitBtn) submitBtn.textContent = 'Register with Supabase';
             } else {
                 rBtn.classList.remove('active');
                 sBtn.classList.add('active');
-                sub.textContent = 'Sign in with your Google account to unlock invisible watermarking, forensic leak inspection, and offline RAM DRM controls.';
+                sub.textContent = 'Sign in with Google or Supabase Email to unlock invisible watermarking, forensic leak inspection, and offline RAM DRM controls.';
+                if (submitBtn) submitBtn.textContent = 'Sign In with Supabase';
+            }
+        }
+
+        async function submitLoginCardSupabase() {
+            const email = (document.getElementById('loginCardEmail')?.value || '').trim();
+            const password = document.getElementById('loginCardPassword')?.value || '';
+            const errBox = document.getElementById('loginErrorMsg');
+            const submitBtn = document.getElementById('loginCardSubmitBtn');
+            const mode = activeLoginMode === 'register' ? 'signup' : 'signin';
+            if (!email || password.length < 6) {
+                if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FF8DA1'; errBox.textContent = 'Enter a valid email and password (min 6 characters).'; }
+                return;
+            }
+            if (errBox) errBox.style.display = 'none';
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                const resp = await fetch(resolveApiUrl(`/api/auth/supabase/${mode}`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FF8DA1'; errBox.textContent = data.detail || 'Authentication failed.'; }
+                    return;
+                }
+                if (data.confirmation_required) {
+                    if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FFB627'; errBox.textContent = data.message || 'Check your email to confirm account, then Sign In.'; }
+                    return;
+                }
+                if (data.supabase_access_token) localStorage.setItem('supabase_access_token', data.supabase_access_token);
+                if (data.access_token) localStorage.setItem('access_token', data.access_token);
+                if (data.user?.email) localStorage.setItem('user_email', data.user.email);
+                if (data.user?.name) localStorage.setItem('user_name', data.user.name);
+                unlockMainWebsiteView(data.user || { email, name: email.split('@')[0] });
+            } catch {
+                if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FF8DA1'; errBox.textContent = 'Could not reach backend authentication server.'; }
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
@@ -4275,7 +4336,7 @@
 
         function handleLogout() {
             localStorage.clear();
-            window.location.href = buildFramerLoginRedirect();
+            lockToLoginView('');
         }
         const logoutGoogleSession = handleLogout;
 
@@ -4380,9 +4441,9 @@
                 } catch {}
             }
 
-            // B. If no token exists in localStorage, immediately redirect to https://linklenslogin.framer.website/
+            // B. If no token exists yet, present the built-in 24/7 Cloud + Supabase Login Portal cleanly
             if (!token) {
-                window.location.href = buildFramerLoginRedirect();
+                lockToLoginView('');
                 return;
             }
 
@@ -4406,7 +4467,7 @@
             const offlineDecoded = decodeJwtOffline(token);
             if (offlineDecoded?.expired) {
                 localStorage.clear();
-                window.location.href = buildFramerLoginRedirect();
+                lockToLoginView('Your session expired. Please sign in again.');
                 return;
             }
             const resolvedEmail = offlineDecoded?.user?.email || localStorage.getItem('user_email') || 'security_user@leaklens.io';

@@ -31,7 +31,7 @@ export default function GoogleAuthButton(props: {
     const {
         apiUrl = "https://leaklens-omega.vercel.app",
         clientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
-        redirectUrl = "https://leaklens.framer.ai/",
+        redirectUrl = "https://leaklens-omega.vercel.app/",
         enableRedirect = true,
         accentColor = "#7B5CFA",
         textColor = "#F3F2F8",
@@ -329,8 +329,8 @@ addPropertyControls(GoogleAuthButton, {
     redirectUrl: {
         type: ControlType.String,
         title: "Main App Redirect",
-        defaultValue: "https://leaklens.framer.ai/",
-        description: "Destination URL after successful login (e.g. https://leaklens.framer.ai/ or http://localhost:8000).",
+        defaultValue: "https://leaklens-omega.vercel.app/",
+        description: "Destination URL after successful login (e.g. https://leaklens-omega.vercel.app/).",
     },
     enableRedirect: {
         type: ControlType.Boolean,
