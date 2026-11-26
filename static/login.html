@@ -8,29 +8,27 @@
     <link rel="icon" type="image/png" href="/icons/icon-192x192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Onest:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
     <style>
         :root {
-            --bg: #06060A;
-            --surface: rgba(14, 15, 24, 0.88);
-            --border: rgba(243, 242, 248, 0.12);
+            --bg: #000000;
+            --surface: rgba(6, 6, 10, 0.76);
+            --border: rgba(243, 242, 248, 0.14);
             --text: #F3F2F8;
-            --muted: #9B99AD;
+            --muted: rgba(243, 242, 248, 0.62);
             --teal: #2BD8C8;
             --violet: #7B5CFA;
             --gold: #FFB627;
             --danger: #FF6B84;
             --mono: 'JetBrains Mono', monospace;
-            --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            --display: 'Space Grotesk', 'Inter', sans-serif;
+            --sans: 'Onest', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --display: 'Space Grotesk', 'Onest', 'Inter', sans-serif;
         }
         * { box-sizing: border-box; }
         body {
             margin: 0;
             min-height: 100vh;
-            background: radial-gradient(circle at 20% 18%, rgba(123, 92, 250, 0.22), transparent 44%),
-                        radial-gradient(circle at 82% 82%, rgba(43, 216, 200, 0.16), transparent 45%),
-                        var(--bg);
+            background: var(--bg);
             color: var(--text);
             font-family: var(--sans);
             display: flex;
@@ -38,19 +36,64 @@
             align-items: center;
             justify-content: center;
             padding: 24px;
+            overflow-x: hidden;
+        }
+        #mindFieldWrap {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            background: radial-gradient(circle at 70% 42%, rgba(123, 92, 250, 0.12), transparent 55%),
+                        radial-gradient(circle at 26% 78%, rgba(43, 216, 200, 0.08), transparent 52%);
+        }
+        #mindFieldCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        @keyframes loginCardEnter {
+            from {
+                opacity: 0;
+                transform: translateY(22px) scale(0.985);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        @keyframes pulseGlow {
+            0%, 100% {
+                box-shadow: 0 36px 100px -24px rgba(0, 0, 0, 0.92), 0 0 60px -28px rgba(123, 92, 250, 0.34);
+            }
+            50% {
+                box-shadow: 0 36px 100px -24px rgba(0, 0, 0, 0.92), 0 0 84px -22px rgba(43, 216, 200, 0.38);
+            }
+        }
+        @keyframes dotPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.45); opacity: 0.55; }
         }
         .login-card {
+            position: relative;
+            z-index: 10;
             width: 100%;
-            max-width: 440px;
+            max-width: 460px;
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 22px;
-            padding: 32px;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+            border-radius: 24px;
+            padding: 36px 32px 30px;
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
             display: flex;
             flex-direction: column;
-            gap: 18px;
+            gap: 16px;
+            animation: loginCardEnter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both,
+                       pulseGlow 6s ease-in-out infinite;
         }
         .brand-row {
             display: flex;
@@ -65,11 +108,14 @@
             gap: 10px;
             font-family: var(--display);
             font-weight: 700;
-            font-size: 20px;
+            font-size: 21px;
             color: var(--text);
             text-decoration: none;
         }
         .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
             font-family: var(--mono);
             font-size: 11px;
             padding: 4px 10px;
@@ -78,17 +124,52 @@
             color: var(--teal);
             background: rgba(43, 216, 200, 0.08);
         }
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--teal);
+            animation: dotPulse 2s ease-in-out infinite;
+        }
         h1 {
             margin: 0;
             font-family: var(--display);
-            font-size: 26px;
-            letter-spacing: -0.02em;
+            font-size: 30px;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            line-height: 1.12;
         }
         p.sub {
             margin: 0;
             font-size: 13.5px;
             line-height: 1.55;
             color: var(--muted);
+        }
+        .auth-mode-tabs {
+            display: inline-flex;
+            align-self: flex-start;
+            padding: 4px;
+            border-radius: 999px;
+            background: rgba(243, 242, 248, 0.05);
+            border: 1px solid var(--border);
+            gap: 4px;
+        }
+        .auth-mode-tab {
+            padding: 7px 18px;
+            border-radius: 999px;
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            font-family: var(--display);
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+        .auth-mode-tab.active {
+            background: var(--violet);
+            color: #FFFFFF;
+            box-shadow: 0 0 18px rgba(123, 92, 250, 0.45);
         }
         .google-btn {
             width: 100%;
@@ -98,17 +179,17 @@
             gap: 12px;
             padding: 13px 18px;
             border-radius: 999px;
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.22);
             background: #FFFFFF;
             color: #11131A;
             font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
         }
         .google-btn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 10px 28px rgba(123, 92, 250, 0.28);
+            box-shadow: 0 12px 30px rgba(123, 92, 250, 0.34);
         }
         .google-btn:disabled {
             opacity: 0.65;
@@ -147,8 +228,12 @@
             color: var(--text);
             font-size: 14px;
             outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
-        input:focus { border-color: var(--teal); }
+        input:focus {
+            border-color: var(--teal);
+            box-shadow: 0 0 0 3px rgba(43, 216, 200, 0.12);
+        }
         .row-actions {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -168,9 +253,11 @@
             font-weight: 600;
             cursor: pointer;
             text-decoration: none;
+            transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
         }
+        .btn:hover { transform: translateY(-1px); border-color: rgba(243, 242, 248, 0.28); }
         .btn.teal { background: rgba(43, 216, 200, 0.16); border-color: rgba(43, 216, 200, 0.45); color: #9FF6EE; }
-        .btn.gold { background: rgba(255, 182, 39, 0.14); border-color: rgba(255, 182, 39, 0.45); color: #FFD67A; }
+        .btn.violet { background: linear-gradient(135deg, #7B5CFA, #5B3DF5); border-color: transparent; color: #FFFFFF; }
         .status-msg {
             font-family: var(--mono);
             font-size: 12px;
@@ -188,9 +275,29 @@
             flex-direction: column;
             gap: 10px;
         }
+        .pill-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(243, 242, 248, 0.08);
+        }
+        .pill-tag {
+            font-family: var(--mono);
+            font-size: 10.5px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--muted);
+        }
     </style>
 </head>
 <body>
+    <!-- Full-Screen WebGL 3D MindField Particle Brain Animation -->
+    <div id="mindFieldWrap" aria-hidden="true">
+        <canvas id="mindFieldCanvas"></canvas>
+    </div>
+
     <main class="login-card" aria-label="LeakLens Firebase Authentication">
         <div class="brand-row">
             <a href="/" class="brand">
@@ -202,18 +309,18 @@
                             <stop offset="1" stop-color="#2BD8C8" />
                         </linearGradient>
                     </defs>
-                    <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" fill="url(#llgrad)" opacity="0.92" />
+                    <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" fill="url(#llgrad)" opacity="0.95" />
                     <path d="M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#000" stroke-opacity="0.55" stroke-width="1.3" />
                 </svg>
                 <span>LeakLens</span>
             </a>
-            <span class="badge">FIREBASE AUTH · CLOUD</span>
+            <span class="badge"><span class="status-dot"></span>FIREBASE AUTH · LIVE</span>
         </div>
 
         <div>
-            <h1>Sign in to LeakLens</h1>
+            <h1>Welcome to LeakLens</h1>
             <p class="sub" style="margin-top:6px;">
-                Authenticate directly with Google via Firebase Authentication — zero local tunnels required.
+                Sign in with Google via Firebase Authentication to unlock invisible watermarking, forensic leak inspection, and offline RAM DRM controls.
             </p>
         </div>
 
@@ -237,26 +344,483 @@
             <span>Continue with Google</span>
         </button>
 
-        <div class="divider">OR SIGN IN WITH EMAIL</div>
+        <div class="divider">OR EMAIL &amp; PASSWORD</div>
 
-        <div>
-            <label for="fbEmail">Work Email</label>
-            <input id="fbEmail" type="email" placeholder="operator@company.com" autocomplete="email" />
+        <div class="auth-mode-tabs">
+            <button type="button" id="modeSignInTab" class="auth-mode-tab active">Sign In</button>
+            <button type="button" id="modeSignUpTab" class="auth-mode-tab">Register</button>
         </div>
 
-        <div>
-            <label for="fbPassword">Password</label>
-            <input id="fbPassword" type="password" placeholder="Minimum 6 characters" autocomplete="current-password" />
-        </div>
-
-        <div class="row-actions">
-            <button type="button" id="emailSignInBtn" class="btn teal">Sign In</button>
-            <button type="button" id="emailSignUpBtn" class="btn gold">Create Account</button>
-        </div>
+        <form id="emailAuthForm" style="display:flex; flex-direction:column; gap:12px;">
+            <div>
+                <label for="fbEmail">Work Email</label>
+                <input id="fbEmail" type="email" required placeholder="operator@company.com" autocomplete="email" />
+            </div>
+            <div>
+                <label for="fbPassword">Password</label>
+                <input id="fbPassword" type="password" required minlength="6" placeholder="Minimum 6 characters" autocomplete="current-password" />
+            </div>
+            <button type="submit" id="emailSubmitBtn" class="btn violet" style="width:100%;">Sign In with Firebase</button>
+        </form>
 
         <div id="authStatus" class="status-msg">Ready for Firebase Google Authentication.</div>
+
+        <div class="pill-tags">
+            <span class="pill-tag" style="color:var(--gold);">Zero-Width Stego</span>
+            <span class="pill-tag" style="color:#B49EFF;">HMAC-SHA256</span>
+            <span class="pill-tag" style="color:var(--teal);">RS256 RAM Leases</span>
+        </div>
     </main>
 
+    <!-- 1. MINDFIELD WEBGL 3D PARTICLE BRAIN ANIMATION -->
+    <script>
+        (function initMindField() {
+            const wrap = document.getElementById('mindFieldWrap');
+            const canvas = document.getElementById('mindFieldCanvas');
+            if (!wrap || !canvas) return;
+
+            let gl = null;
+            try {
+                gl = canvas.getContext('webgl', { antialias: false, alpha: true, premultipliedAlpha: true }) ||
+                     canvas.getContext('experimental-webgl');
+            } catch {
+                gl = null;
+            }
+            if (!gl) return;
+
+            function makePrng(seed) {
+                let t = seed >>> 0;
+                return () => {
+                    t |= 0;
+                    t = (t + 1831565813) | 0;
+                    let e = Math.imul(t ^ (t >>> 15), 1 | t);
+                    e = (e + Math.imul(e ^ (e >>> 7), 61 | e)) ^ e;
+                    return ((e ^ (e >>> 14)) >>> 0) / 4294967296;
+                };
+            }
+
+            const perm = (() => {
+                const rand = makePrng(7);
+                const t = new Uint8Array(512);
+                const n = Array.from({ length: 256 }, (_, i) => i);
+                for (let i = 255; i > 0; i--) {
+                    const r = Math.floor(rand() * (i + 1));
+                    [n[i], n[r]] = [n[r], n[i]];
+                }
+                for (let i = 0; i < 512; i++) t[i] = n[i & 255];
+                return t;
+            })();
+
+            const grad = [1,1,0,-1,1,0,1,-1,0,-1,-1,0,1,0,1,-1,0,1,1,0,-1,-1,0,-1,0,1,1,0,-1,1,0,1,-1,0,-1,-1];
+            const clamp = (v, lo = 0, hi = 1) => v < lo ? lo : v > hi ? hi : v;
+            const smoothstep = (e, t, n) => { const r = clamp((n - e) / (t - e)); return r * r * (3 - 2 * r); };
+            const mix = (a, b, t) => a + (b - a) * t;
+            const fade = (e) => e * e * e * (e * (e * 6 - 15) + 10);
+            const dotG = (idx, x, y, z) => { const i = (idx % 12) * 3; return grad[i] * x + grad[i + 1] * y + grad[i + 2] * z; };
+
+            function noise3(x, y, z) {
+                const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+                x -= xi; y -= yi; z -= zi;
+                const o = xi & 255, s = yi & 255, c = zi & 255;
+                const u = fade(x), v = fade(y), w = fade(z);
+                const f = perm[o] + s, p = perm[f] + c, m = perm[f + 1] + c;
+                const h = perm[o + 1] + s, g = perm[h] + c, k = perm[h + 1] + c;
+                return mix(
+                    mix(mix(dotG(perm[p], x, y, z), dotG(perm[g], x - 1, y, z), u),
+                        mix(dotG(perm[m], x, y - 1, z), dotG(perm[k], x - 1, y - 1, z), u), v),
+                    mix(mix(dotG(perm[p + 1], x, y, z - 1), dotG(perm[g + 1], x - 1, y, z - 1), u),
+                        mix(dotG(perm[m + 1], x, y - 1, z - 1), dotG(perm[k + 1], x - 1, y - 1, z - 1), u), v),
+                    w
+                );
+            }
+
+            function sampleCortex(rand) {
+                const side = rand() < 0.5 ? -1 : 1;
+                const z0 = rand() * 2 - 1, ang = rand() * Math.PI * 2, r = Math.sqrt(1 - z0 * z0);
+                const ax = r * Math.cos(ang), oy = z0, az = r * Math.sin(ang);
+                const medial = az * side < 0;
+                let l = 0.8, u = 0.6;
+                if (ax < -0.3) { l *= 1 - 0.12 * smoothstep(-0.3, -1, ax); u *= 1 - 0.1 * smoothstep(-0.3, -1, ax); }
+                if (ax > 0.45) { l *= 1 - 0.18 * smoothstep(0.45, 1, ax); u *= 1 - 0.2 * smoothstep(0.45, 1, ax); }
+                const d = Math.sqrt(ax * ax + (oy / l) ** 2 + (az / u) ** 2) * l * u;
+                if (rand() > d / 0.74) return null;
+                let fx = ax, py = oy * l, mz = az * u;
+                if (medial) mz *= 0.22;
+                if (py < 0) {
+                    py *= 0.66;
+                    py -= 0.27 * Math.exp(-(((fx + 0.1) / 0.45) ** 2)) * smoothstep(-0.05, -0.6, oy) * (medial ? 0.25 : 1);
+                }
+                if (py > 0) py *= 1 + 0.07 * Math.exp(-(((fx - 0.1) / 0.6) ** 2));
+                const g = noise3(fx * 3.3 + side * 17.3, py * 3.96 + 3.1, mz * 4.95 + 1.7) +
+                          0.4 * noise3(fx * 6.93, py * 6.93 + 9, mz * 6.93 - 4);
+                const ridge = Math.exp(-((g / 0.1) ** 2));
+                let sylv = 0;
+                if (!medial && fx > -0.62 && fx < 0.42) {
+                    sylv = Math.exp(-(((py - (-0.06 + 0.3 * (fx + 0.55))) / 0.03) ** 2)) * smoothstep(-0.62, -0.45, fx);
+                }
+                if (Math.max(ridge, sylv) > 0.3) return null;
+                const fold = Math.max(Math.exp(-((g / 0.26) ** 2)), sylv);
+                const sc = 1 - 0.06 * fold - 0.035 * g;
+                return [fx * sc, py * sc + 0.12, mz * sc + side * 0.15, ax, (py < 0 ? oy * 1.6 : oy) / l, (medial ? az * 0.3 : az) / u, fold];
+            }
+
+            function sampleCerebellum(rand) {
+                const t = rand() * 2 - 1, ang = rand() * Math.PI * 2, r = Math.sqrt(1 - t * t);
+                const ix = r * Math.cos(ang), iy = t, iz = r * Math.sin(ang);
+                if (iy > 0.2 && ix < 0.2) return null;
+                const s = ix * 0.3, c = iy * 0.18, l = iz * 0.62;
+                if (Math.abs(Math.sin((c + 0.03 * noise3(s * 6, l * 6, 1)) * 48)) < 0.28) return null;
+                return [s + 0.47, c - 0.27, l * 0.92, ix, iy, iz, 0];
+            }
+
+            function sampleStem(rand) {
+                const t = rand(), ang = rand() * Math.PI * 2, r = mix(0.14, 0.095, t);
+                return [mix(0.2, 0.28, t) + Math.cos(ang) * r * 0.8, mix(-0.3, -0.92, t), Math.sin(ang) * r, Math.cos(ang), 0, Math.sin(ang), 0];
+            }
+
+            function buildPointCloud(count) {
+                const rand = makePrng(11);
+                const pos = new Float32Array(count * 3);
+                const nrm = new Float32Array(count * 3);
+                const rnd = new Float32Array(count * 4);
+                let c = 0;
+                const minDist = 0.026 * Math.sqrt(12000 / count);
+                const grid = new Map();
+                const cell = (x, y, z) => (Math.floor(x / minDist) + 512) * 1048576 + (Math.floor(y / minDist) + 512) * 1024 + (Math.floor(z / minDist) + 512);
+
+                const ok = (x, y, z, dLim) => {
+                    const cx = Math.floor(x / minDist), cy = Math.floor(y / minDist), cz = Math.floor(z / minDist), d2 = dLim * dLim;
+                    for (let dx = -1; dx <= 1; dx++)
+                        for (let dy = -1; dy <= 1; dy++)
+                            for (let dz = -1; dz <= 1; dz++) {
+                                const list = grid.get((cx + dx + 512) * 1048576 + (cy + dy + 512) * 1024 + (cz + dz + 512));
+                                if (list) {
+                                    for (let k = 0; k < list.length; k++) {
+                                        const idx = list[k] * 3;
+                                        const rx = pos[idx] - x, ry = pos[idx + 1] - y, rz = pos[idx + 2] - z;
+                                        if (rx * rx + ry * ry + rz * rz < d2) return false;
+                                    }
+                                }
+                            }
+                    return true;
+                };
+
+                const pushPt = (e, part = 0) => {
+                    const x = e[0], y = e[1], z = e[2];
+                    pos[c * 3] = x; pos[c * 3 + 1] = y; pos[c * 3 + 2] = z;
+                    const mag = (Math.hypot(e[3], e[4], e[5]) || 1) / (1 - 0.5 * clamp(e[6] || 0));
+                    nrm[c * 3] = e[3] / mag; nrm[c * 3 + 1] = e[4] / mag; nrm[c * 3 + 2] = e[5] / mag;
+                    rnd[c * 4] = ((noise3(x * 1.9 + 5, y * 1.9, z * 1.9) * 2.4 + rand() * 0.42) % 1 + 1) % 1;
+                    rnd[c * 4 + 1] = rand();
+                    rnd[c * 4 + 2] = part * 2 + rand();
+                    rnd[c * 4 + 3] = rand();
+                    const k = cell(x, y, z);
+                    const arr = grid.get(k);
+                    if (arr) arr.push(c); else grid.set(k, [c]);
+                    c++;
+                };
+
+                const parts = [[sampleCortex, 0.84, 1], [sampleCerebellum, 0.07, 0.9], [sampleStem, 0.02, 1.4]];
+                const halo = Math.floor(count * 0.015);
+                let idx = 0;
+                for (const [fn, frac, mul] of parts) {
+                    const target = c + Math.floor((count - halo) * frac);
+                    let tries = 0;
+                    while (c < target && tries++ < count * 55) {
+                        const pt = fn(rand);
+                        if (pt && ok(pt[0], pt[1], pt[2], minDist * mul)) pushPt(pt, idx);
+                    }
+                    idx++;
+                }
+                const rem = Math.min(count, c + halo);
+                while (c < rem) {
+                    const z0 = rand() * 2 - 1, ang = rand() * Math.PI * 2, r = Math.sqrt(1 - z0 * z0), rad = 1.08 + rand() * 0.55;
+                    pushPt([r * Math.cos(ang) * rad * 1.05, z0 * rad * 0.8 + 0.1, r * Math.sin(ang) * rad * 0.95, r * Math.cos(ang), z0, r * Math.sin(ang)], 3);
+                }
+                return { n: c, pos, nrm, rnd };
+            }
+
+            function persp(fov, aspect, near, far) {
+                const f = 1 / Math.tan(fov / 2);
+                return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, (2 * far * near) / (near - far), 0];
+            }
+
+            function rot3(ry, rx, rz = 0) {
+                const cy = Math.cos(ry), sy = Math.sin(ry), cx = Math.cos(rx), sx = Math.sin(rx), cz = Math.cos(rz), sz = Math.sin(rz);
+                const my = [cy, 0, -sy, 0, 1, 0, sy, 0, cy];
+                const mx = [1, 0, 0, 0, cx, sx, 0, -sx, cx];
+                const mz = [cz, sz, 0, -sz, cz, 0, 0, 0, 1];
+                const mul = (A, B) => {
+                    const out = Array(9).fill(0);
+                    for (let r = 0; r < 3; r++)
+                        for (let i = 0; i < 3; i++)
+                            for (let a = 0; a < 3; a++) out[r * 3 + i] += A[a * 3 + i] * B[r * 3 + a];
+                    return out;
+                };
+                return mul(mz, mul(mx, my));
+            }
+
+            function parseRgb(hex, def = [1, 1, 1]) {
+                const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+                if (!m) return def;
+                const v = parseInt(m[1], 16);
+                return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+            }
+
+            const vsSrc = `
+                attribute vec4 aPos; attribute float aHeat; attribute vec3 aNrm; attribute vec4 aRnd;
+                uniform mat4 uPV; uniform mat3 uRot; uniform vec3 uCam; uniform float uSize; uniform float uTime;
+                uniform float uPx;
+                uniform vec3 uA; uniform vec3 uB; uniform vec3 uC;
+                varying vec3 vCol; varying float vA; varying float vAng; varying float vSz; varying float vSeed;
+                void main() {
+                    vec4 cp = uPV * vec4(aPos.xyz, 1.0);
+                    gl_Position = cp;
+                    float crest = length(aNrm) * 2.0 - 1.0;
+                    vec3 n = normalize(uRot * aNrm);
+                    vec3 vd = normalize(uCam - aPos.xyz);
+                    float nv = dot(n, vd);
+                    float rim = 1.0 - abs(nv);
+                    float r = aRnd.x;
+                    vec3 gold = uA;
+                    vec3 amber = uA * vec3(1.0, 0.78, 0.77);
+                    vec3 violet = uB;
+                    vec3 teal = uC;
+                    vec3 white = vec3(0.93, 0.92, 1.0);
+                    vec3 pink = mix(uB, vec3(1.0), 0.28);
+                    vec3 inner = r < 0.5 ? white : r < 0.72 ? gold : r < 0.84 ? teal : r < 0.95 ? violet : pink;
+                    vec3 c = mix(inner, r < 0.7 ? violet : pink, smoothstep(0.48, 0.66, rim) * 0.75);
+                    c = mix(c, r < 0.3 ? amber : gold, smoothstep(0.6, 0.82, rim));
+                    c = mix(c, white, aHeat * 0.75);
+                    vCol = c;
+                    float facing = mix(0.24, 1.0, smoothstep(-0.3, 0.3, nv));
+                    float a = facing * (0.34 + 0.66 * crest * crest) * 1.1;
+                    float part = floor(aRnd.z / 2.0);
+                    if (part > 2.5) a *= 0.35;
+                    else if (part > 1.5) a *= 0.45;
+                    else if (part > 0.5) a *= 0.34;
+                    vA = a;
+                    float sz = uSize * (0.72 + aRnd.y * 0.62) * (1.0 + aHeat * 2.1);
+                    float px = clamp(sz * uPx / max(cp.w, 0.1), 1.5, 26.0);
+                    gl_PointSize = px;
+                    vSz = px;
+                    vSeed = aRnd.w;
+                    vAng = aRnd.w * 6.2831 + uTime * (0.18 + aRnd.y * 0.55) * (0.4 + aHeat);
+                }
+            `;
+
+            const fsSrc = `
+                precision mediump float;
+                varying vec3 vCol; varying float vA; varying float vAng; varying float vSz; varying float vSeed;
+                float seg(vec2 p, vec2 a, vec2 b) {
+                    vec2 pa = p - a, ba = b - a;
+                    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+                    return length(pa - ba * h);
+                }
+                void main() {
+                    vec2 p = gl_PointCoord * 2.0 - 1.0; p.y = -p.y;
+                    float c = cos(vAng), s = sin(vAng);
+                    p = mat2(c, -s, s, c) * p;
+                    vec2 A = vec2(0.0, 0.84), B = vec2(-0.76, -0.46), C = vec2(0.76, -0.46);
+                    vec2 D = vec2(sin(vAng * 1.7 + vSeed * 9.0) * 0.3, cos(vAng * 1.3) * 0.26 - 0.04);
+                    float e1 = min(min(seg(p, A, B), seg(p, B, C)), seg(p, C, A));
+                    float e2 = min(min(seg(p, A, D), seg(p, B, D)), seg(p, C, D));
+                    float w = clamp(2.2 / vSz, 0.06, 0.5);
+                    float aa = 2.0 / vSz;
+                    float a1 = 1.0 - smoothstep(w * 0.5, w * 0.5 + aa, e1);
+                    float a2 = (1.0 - smoothstep(w * 0.4, w * 0.4 + aa, e2)) * 0.55;
+                    float a = max(a1, a2);
+                    a = max(a, (1.0 - smoothstep(0.0, 1.0, length(p))) * step(vSz, 3.0) * 0.9);
+                    a *= vA;
+                    if (a < 0.01) discard;
+                    gl_FragColor = vec4(vCol * a, a);
+                }
+            `;
+
+            const compile = (type, src) => {
+                const sh = gl.createShader(type);
+                gl.shaderSource(sh, src);
+                gl.compileShader(sh);
+                return sh;
+            };
+            const prog = gl.createProgram();
+            gl.attachShader(prog, compile(gl.VERTEX_SHADER, vsSrc));
+            gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fsSrc));
+            gl.linkProgram(prog);
+            gl.useProgram(prog);
+
+            const loc = (n) => gl.getUniformLocation(prog, n);
+            const uPV = loc('uPV'), uRot = loc('uRot'), uCam = loc('uCam'), uSize = loc('uSize'),
+                  uTime = loc('uTime'), uPx = loc('uPx');
+
+            const colA = parseRgb('#FFB627'), colB = parseRgb('#7B5CFA'), colC = parseRgb('#2BD8C8');
+            gl.uniform3f(loc('uA'), colA[0], colA[1], colA[2]);
+            gl.uniform3f(loc('uB'), colB[0], colB[1], colB[2]);
+            gl.uniform3f(loc('uC'), colC[0], colC[1], colC[2]);
+
+            const isPhone = () => window.innerWidth < 810;
+            let phoneState = isPhone();
+            let cloud = buildPointCloud(phoneState ? 4600 : 8800);
+            let P = cloud.n;
+            let F = new Float32Array(P * 5);
+            let I = new Float32Array(P * 3);
+            let L = new Float32Array(P * 3);
+            let R = new Float32Array(P);
+
+            const bufDyn = gl.createBuffer(), bufNrm = gl.createBuffer(), bufRnd = gl.createBuffer();
+            const aPos = gl.getAttribLocation(prog, 'aPos'), aHeat = gl.getAttribLocation(prog, 'aHeat'),
+                  aNrm = gl.getAttribLocation(prog, 'aNrm'), aRnd = gl.getAttribLocation(prog, 'aRnd');
+
+            const uploadStatic = () => {
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm);
+                gl.bufferData(gl.ARRAY_BUFFER, cloud.nrm.subarray(0, P * 3), gl.STATIC_DRAW);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufRnd);
+                gl.bufferData(gl.ARRAY_BUFFER, cloud.rnd.subarray(0, P * 4), gl.STATIC_DRAW);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufDyn);
+                gl.bufferData(gl.ARRAY_BUFFER, F.byteLength, gl.DYNAMIC_DRAW);
+            };
+            uploadStatic();
+
+            gl.disable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+            let W = 0, H = 0, dpr = 1;
+            const resize = () => {
+                dpr = Math.min(window.devicePixelRatio || 1, 1.6);
+                W = wrap.clientWidth || window.innerWidth;
+                H = wrap.clientHeight || window.innerHeight;
+                canvas.width = Math.round(W * dpr);
+                canvas.height = Math.round(H * dpr);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+            };
+            resize();
+            window.addEventListener('resize', () => {
+                const pNow = isPhone();
+                if (pNow !== phoneState) {
+                    phoneState = pNow;
+                    cloud = buildPointCloud(phoneState ? 4600 : 8800);
+                    P = cloud.n;
+                    F = new Float32Array(P * 5);
+                    I = new Float32Array(P * 3);
+                    L = new Float32Array(P * 3);
+                    R = new Float32Array(P);
+                    uploadStatic();
+                }
+                resize();
+            });
+
+            const ptr = { x: -9999, y: -9999, on: false, lx: 0, ly: 0 };
+            window.addEventListener('pointermove', (e) => {
+                ptr.x = e.clientX;
+                ptr.y = e.clientY;
+                ptr.on = true;
+            }, { passive: true });
+            document.addEventListener('pointerleave', () => { ptr.on = false; });
+
+            const FOV = (22 * Math.PI) / 180, CAM_Z = 10;
+            let lastTs = performance.now(), startTs = lastTs;
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            const renderFrame = (now) => {
+                requestAnimationFrame(renderFrame);
+                if (document.hidden || !W || !H) { lastTs = now; return; }
+                const dt = Math.min(0.05, (now - lastTs) / 1000);
+                const tSec = (now - startTs) / 1000;
+                lastTs = now;
+
+                const aspect = W / H;
+                const s = CAM_Z * Math.tan(FOV / 2), c = s * aspect;
+                const mobile = W < 810, tablet = W >= 810 && W < 1200;
+                const hX = mobile || tablet ? 0.5 : 0.72;
+                const hY = mobile ? 0.5 : 0.52;
+                const hSc = mobile ? 0.42 : tablet ? 0.5 : 0.66;
+
+                if (ptr.on) {
+                    ptr.lx = mix(ptr.lx, ptr.x / W - 0.5, 0.04);
+                    ptr.ly = mix(ptr.ly, ptr.y / H - 0.5, 0.04);
+                }
+
+                const ry = 0.22 + (reducedMotion ? 0 : tSec * 0.16) + ptr.lx * 0.25;
+                const rx = 0.07 + Math.sin(tSec * 0.35) * 0.04 + ptr.ly * 0.14;
+                const scaleWorld = (hSc * 2 * s) / 1.46;
+                const offX = (hX * 2 - 1) * c;
+                const offY = -(hY * 2 - 1) * s + 0.04 * scaleWorld;
+                const rotBrain = rot3(ry, rx, 0.02);
+
+                const PMat = persp(FOV, aspect, 0.1, 40);
+                const UMat = PMat.slice();
+                UMat[12] += UMat[8] * -10; UMat[13] += UMat[9] * -10; UMat[14] += UMat[10] * -10; UMat[15] += UMat[11] * -10;
+
+                const pxToWorld = (2 * s) / H;
+                const ptrRad = Math.max(90, Math.min(W, H) * 0.16);
+                const vPos = cloud.pos;
+
+                for (let e = 0; e < P; e++) {
+                    const idx3 = e * 3;
+                    const px = vPos[idx3], py = vPos[idx3 + 1], pz = vPos[idx3 + 2];
+                    const sx = offX + scaleWorld * (rotBrain[0] * px + rotBrain[3] * py + rotBrain[6] * pz);
+                    const sy = offY + scaleWorld * (rotBrain[1] * px + rotBrain[4] * py + rotBrain[7] * pz);
+                    const sz = scaleWorld * (rotBrain[2] * px + rotBrain[5] * py + rotBrain[8] * pz);
+
+                    let ox = I[idx3], oy = I[idx3 + 1], oz = I[idx3 + 2];
+                    let vx = L[idx3], vy = L[idx3 + 1], vz = L[idx3 + 2];
+                    let heat = R[e] * (0.9 ** (dt * 60));
+
+                    if (ptr.on) {
+                        const pw = UMat[3] * sx + UMat[7] * sy + UMat[11] * sz + UMat[15];
+                        const scrX = (((UMat[0] * sx + UMat[4] * sy + UMat[8] * sz + UMat[12]) / pw) * 0.5 + 0.5) * W;
+                        const scrY = (1 - (((UMat[1] * sx + UMat[5] * sy + UMat[9] * sz + UMat[13]) / pw) * 0.5 + 0.5)) * H;
+                        const dx = scrX - ptr.x, dy = scrY - ptr.y, dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+                        if (dist < ptrRad) {
+                            const f = 1 - dist / ptrRad, push = f * f * 9 * pxToWorld * 60;
+                            const nx = dx / dist, ny = dy / dist;
+                            vx += (nx * 0.9 - ny * 0.75) * push * dt;
+                            vy += (-ny * 0.9 - nx * 0.75) * push * dt;
+                            vz += f * f * 2.4 * dt;
+                            if (f > heat) heat = f;
+                        }
+                    }
+
+                    const damp = 0.86 ** (dt * 60);
+                    vx = (vx - ox * 22 * dt) * damp; vy = (vy - oy * 22 * dt) * damp; vz = (vz - oz * 22 * dt) * damp;
+                    ox += vx * dt; oy += vy * dt; oz += vz * dt;
+                    I[idx3] = ox; I[idx3 + 1] = oy; I[idx3 + 2] = oz;
+                    L[idx3] = vx; L[idx3 + 1] = vy; L[idx3 + 2] = vz;
+                    R[e] = heat;
+
+                    const o5 = e * 5;
+                    F[o5] = sx + ox; F[o5 + 1] = sy + oy; F[o5 + 2] = sz + oz;
+                    F[o5 + 3] = 0; F[o5 + 4] = heat;
+                }
+
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufDyn);
+                gl.bufferSubData(gl.ARRAY_BUFFER, 0, F);
+                if (aPos >= 0) { gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 4, gl.FLOAT, false, 20, 0); }
+                if (aHeat >= 0) { gl.enableVertexAttribArray(aHeat); gl.vertexAttribPointer(aHeat, 1, gl.FLOAT, false, 20, 16); }
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm);
+                if (aNrm >= 0) { gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0); }
+                gl.bindBuffer(gl.ARRAY_BUFFER, bufRnd);
+                if (aRnd >= 0) { gl.enableVertexAttribArray(aRnd); gl.vertexAttribPointer(aRnd, 4, gl.FLOAT, false, 0, 0); }
+
+                gl.uniformMatrix4fv(uPV, false, new Float32Array(UMat));
+                gl.uniformMatrix3fv(uRot, false, new Float32Array(rotBrain));
+                gl.uniform3f(uCam, 0, 0, CAM_Z);
+
+                const ptSz = clamp(W * 0.006, 6.5, 10.5);
+                const projH = canvas.height / (2 * Math.tan(FOV / 2));
+                gl.uniform1f(uSize, (ptSz * dpr * CAM_Z) / projH);
+                gl.uniform1f(uTime, tSec);
+                gl.uniform1f(uPx, projH);
+                gl.drawArrays(gl.POINTS, 0, P);
+            };
+            requestAnimationFrame(renderFrame);
+        })();
+    </script>
+
+    <!-- 2. FIREBASE GOOGLE AUTHENTICATION -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js';
         import {
@@ -289,6 +853,22 @@
 
         const params = new URLSearchParams(window.location.search);
         const loggedOut = params.get('logged_out') === '1';
+        let authMode = 'signin';
+
+        const signInTab = document.getElementById('modeSignInTab');
+        const signUpTab = document.getElementById('modeSignUpTab');
+        const emailSubmitBtn = document.getElementById('emailSubmitBtn');
+
+        function setAuthMode(mode) {
+            authMode = mode;
+            if (signInTab && signUpTab && emailSubmitBtn) {
+                signInTab.classList.toggle('active', mode === 'signin');
+                signUpTab.classList.toggle('active', mode === 'signup');
+                emailSubmitBtn.textContent = mode === 'signup' ? 'Create Account with Firebase' : 'Sign In with Firebase';
+            }
+        }
+        signInTab?.addEventListener('click', () => setAuthMode('signin'));
+        signUpTab?.addEventListener('click', () => setAuthMode('signup'));
 
         function getSafeRedirectTarget() {
             const raw = (params.get('redirect') || '').trim();
@@ -392,17 +972,17 @@
             }
         }
 
-        async function handleEmailAuth(mode) {
+        async function handleEmailAuth() {
             const email = (document.getElementById('fbEmail')?.value || '').trim();
             const password = document.getElementById('fbPassword')?.value || '';
             if (!email || password.length < 6) {
                 setStatus('Enter a valid email and password (min 6 characters).', 'var(--danger)');
                 return;
             }
-            setStatus(mode === 'signup' ? 'Creating Firebase account...' : 'Signing in via Firebase...', 'var(--muted)');
+            setStatus(authMode === 'signup' ? 'Creating Firebase account...' : 'Signing in via Firebase...', 'var(--muted)');
             try {
                 const cred =
-                    mode === 'signup'
+                    authMode === 'signup'
                         ? await createUserWithEmailAndPassword(auth, email, password)
                         : await signInWithEmailAndPassword(auth, email, password);
                 await completeFirebaseSession(cred.user);
@@ -412,8 +992,10 @@
         }
 
         document.getElementById('googleSignInBtn')?.addEventListener('click', handleGoogleLogin);
-        document.getElementById('emailSignInBtn')?.addEventListener('click', () => handleEmailAuth('signin'));
-        document.getElementById('emailSignUpBtn')?.addEventListener('click', () => handleEmailAuth('signup'));
+        document.getElementById('emailAuthForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleEmailAuth();
+        });
 
         (async function bootstrapAuth() {
             const hash = window.location.hash || '';
