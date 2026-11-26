@@ -51,13 +51,13 @@ interface LeaseResponse {
     status_message: string
 }
 
-const FRAMER_LOGIN_URL = "https://linklenslogin.framer.website"
-const DEFAULT_REMOTE_BACKEND = "https://leaklens-omega.vercel.app"
+const FRAMER_LOGIN_URL = "https://leaklens-77637.web.app/login"
+const DEFAULT_REMOTE_BACKEND = "https://leaklens-tyrn.vercel.app"
 
 const resolveDefaultBackendUrl = (): string => {
     if (typeof window === "undefined") return ""
     const host = window.location.hostname
-    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".vercel.app")) {
+    if (host.endsWith(".vercel.app")) {
         return ""
     }
     return DEFAULT_REMOTE_BACKEND
@@ -322,17 +322,8 @@ export default function LeakLensDashboard(props: {
         [currentApiUrl]
     )
     const buildApiHeaders = React.useCallback(
-        (extra: Record<string, string> = {}) => {
-            const headers: Record<string, string> = { ...extra }
-            if (normalizedBackendUrl.includes("ngrok")) {
-                headers["ngrok-skip-browser-warning"] = "true"
-            }
-            if (normalizedBackendUrl.includes("loca.lt")) {
-                headers["bypass-tunnel-reminder"] = "true"
-            }
-            return headers
-        },
-        [normalizedBackendUrl]
+        (extra: Record<string, string> = {}) => ({ ...extra }),
+        []
     )
     const apiFetch = React.useCallback(
         (path: string, options: RequestInit = {}) => {

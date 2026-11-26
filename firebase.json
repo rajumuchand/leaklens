@@ -1,4 +1,19 @@
 {
+  "auth": {
+    "providers": {
+      "anonymous": false,
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "LeakLens",
+        "supportEmail": "rajumuchandi636@gmail.com",
+        "authorizedRedirectUris": [
+          "https://leaklens-77637.firebaseapp.com/__/auth/handler",
+          "https://leaklens-77637.web.app/__/auth/handler",
+          "https://leaklens-tyrn.vercel.app/__/auth/handler"
+        ]
+      }
+    }
+  },
   "hosting": {
     "public": "static",
     "ignore": [
@@ -8,13 +23,6 @@
     ],
     "cleanUrls": true,
     "trailingSlash": false,
-    "redirects": [
-      {
-        "source": "/login",
-        "destination": "https://linklenslogin.framer.website/?redirect=https%3A%2F%2Fleaklens-77637.web.app%2F",
-        "type": 302
-      }
-    ],
     "headers": [
       {
         "source": "/sw.js",
@@ -37,6 +45,10 @@
       }
     ],
     "rewrites": [
+      {
+        "source": "/login",
+        "destination": "/login.html"
+      },
       {
         "source": "/demo",
         "destination": "/index.html"

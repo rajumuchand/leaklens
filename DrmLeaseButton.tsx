@@ -22,12 +22,9 @@ interface LeaseResponse {
     status_message: string
 }
 
-const buildTunnelHeaders = (baseUrl: string, extra: Record<string, string> = {}) => {
-    const headers: Record<string, string> = { ...extra }
-    if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
-    if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
-    return headers
-}
+const buildTunnelHeaders = (_baseUrl: string, extra: Record<string, string> = {}) => ({
+    ...extra,
+})
 
 export default function DrmLeaseButton(props: {
     apiUrl?: string
@@ -38,7 +35,7 @@ export default function DrmLeaseButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://leaklens-omega.vercel.app",
+        apiUrl = "https://leaklens-tyrn.vercel.app",
         leaseSeconds = 30,
         buttonLabel = "Reset / Renew Lease",
         autoPoll = true,
@@ -260,7 +257,7 @@ addPropertyControls(DrmLeaseButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://leaklens-omega.vercel.app",
+        defaultValue: "https://leaklens-tyrn.vercel.app",
     },
     leaseSeconds: {
         type: ControlType.Number,

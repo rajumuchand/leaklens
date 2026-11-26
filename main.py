@@ -31,9 +31,7 @@ app = FastAPI(
     version="3.0.0"
 )
 
-# Enable Full CORS Middleware for public HTTPS tunnels, Framer, Vercel, and local dev
-# Supports https://linklenslogin.framer.website, https://leaklens.vercel.app,
-# https://leaklens.framer.ai, http://localhost:3000, and http://localhost:5173
+# Enable Full CORS Middleware for Firebase Hosting, Framer, and Vercel
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,7 +43,7 @@ app.add_middleware(
 
 
 def _get_forwarded_proto(request: Request) -> str:
-    """Resolves original client protocol from X-Forwarded-Proto behind ngrok / cloud HTTPS tunnels."""
+    """Resolves original client protocol from X-Forwarded-Proto behind cloud HTTPS proxies."""
     raw_proto = request.headers.get("x-forwarded-proto") or request.headers.get("x-forwarded-scheme")
     if raw_proto:
         return raw_proto.split(",")[0].strip().lower()
@@ -54,7 +52,7 @@ def _get_forwarded_proto(request: Request) -> str:
 
 @app.middleware("http")
 async def https_forwarded_header_middleware(request: Request, call_next):
-    """Propagates X-Forwarded-Proto and X-Forwarded-Host across ASGI scope for HTTPS tunnels."""
+    """Propagates X-Forwarded-Proto across ASGI scope behind cloud HTTPS proxies."""
     proto = _get_forwarded_proto(request)
     if proto in ("http", "https"):
         request.scope["scheme"] = proto
@@ -102,6 +100,7 @@ ALLOWED_GOOGLE_CLIENT_IDS = {
 }
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "synapse_jwt_secret_key_2026")
 ALGORITHM = "HS256"
+FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "leaklens-77637")
 
 SUPABASE_PROJECT_REF = "fpidtcofamgfyyiwyshy"
 SUPABASE_URL = (
@@ -1330,15 +1329,14 @@ def demo_page():
 
 
 @app.get("/login")
-def login_page(request: Request):
-    proto = _get_forwarded_proto(request)
-    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "leaklens-tyrn.vercel.app"
-    redirect_target = f"{proto}://{fwd_host}/"
-    from urllib.parse import quote
-    return RedirectResponse(
-        url=f"https://linklenslogin.framer.website/?redirect={quote(redirect_target, safe='')}",
-        status_code=302,
-    )
+def login_page():
+    if os.path.exists(STATIC_LOGIN_PATH):
+        return FileResponse(
+            STATIC_LOGIN_PATH,
+            media_type="text/html",
+            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+        )
+    return HTMLResponse("<h1>Login page not found.</h1>", status_code=404)
 
 
 @app.get("/api/health")
@@ -1961,6 +1959,10 @@ class GoogleAuthRequest(BaseModel):
     token: str
 
 
+class FirebaseAuthRequest(BaseModel):
+    id_token: str
+
+
 class SupabaseAuthRequest(BaseModel):
     email: str
     password: str
@@ -2016,6 +2018,45 @@ def google_auth_endpoint(req: GoogleAuthRequest, request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Google authentication failed: {str(e)}")
+
+
+@app.post("/api/auth/firebase")
+def firebase_auth_endpoint(req: FirebaseAuthRequest, request: Request):
+    """Verifies a Firebase Authentication ID token and returns a signed 24h application JWT session."""
+    try:
+        decoded = id_token.verify_firebase_token(
+            req.id_token,
+            google_requests.Request(),
+            audience=FIREBASE_PROJECT_ID,
+        )
+        email = decoded.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Invalid Firebase Token: Missing email.")
+
+        name = decoded.get("name") or email.split("@")[0]
+        picture = decoded.get("picture", "")
+        firebase_uid = decoded.get("uid") or decoded.get("sub") or ""
+
+        session_token = create_jwt_token(email, name, picture)
+        proto = _get_forwarded_proto(request)
+        fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "leaklens-tyrn.vercel.app"
+
+        return {
+            "status": "success",
+            "provider": "firebase",
+            "access_token": session_token,
+            "firebase_uid": firebase_uid,
+            "resolved_origin": f"{proto}://{fwd_host}",
+            "user": {
+                "email": email,
+                "name": name,
+                "picture": picture,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Firebase authentication failed: {str(e)}")
 
 
 @app.post("/api/auth/supabase/signup")
@@ -2084,6 +2125,25 @@ def get_current_user(authorization: str = Header(None)):
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
     except jwt.PyJWTError:
+        try:
+            fb_user = id_token.verify_firebase_token(
+                token,
+                google_requests.Request(),
+                audience=FIREBASE_PROJECT_ID,
+            )
+            if fb_user and fb_user.get("email"):
+                return {
+                    "status": "authenticated",
+                    "provider": "firebase",
+                    "user": {
+                        "email": fb_user["email"],
+                        "name": fb_user.get("name") or fb_user["email"].split("@")[0],
+                        "picture": fb_user.get("picture", ""),
+                    },
+                }
+        except Exception:
+            pass
+
         sb_user = supabase_store.verify_user_jwt(token)
         if sb_user and sb_user.get("email"):
             meta = sb_user.get("user_metadata") or {}

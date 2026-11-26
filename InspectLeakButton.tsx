@@ -31,7 +31,7 @@ export default function InspectLeakButton(props: {
     textColor?: string
 }) {
     const {
-        apiUrl = "https://leaklens-omega.vercel.app",
+        apiUrl = "https://leaklens-tyrn.vercel.app",
         buttonLabel = "Run Forensic Leak Analysis",
         pastedSnippet: initialSnippet = "",
         showTextarea = true,
@@ -74,12 +74,6 @@ export default function InspectLeakButton(props: {
         const headers: Record<string, string> = {
             "Content-Type": "application/json",
         }
-        if (baseUrl.includes("ngrok")) {
-            headers["ngrok-skip-browser-warning"] = "true"
-        }
-        if (baseUrl.includes("loca.lt")) {
-            headers["bypass-tunnel-reminder"] = "true"
-        }
 
         try {
             const response = await fetch(`${baseUrl}/api/inspect`, {
@@ -111,8 +105,6 @@ export default function InspectLeakButton(props: {
         setError(null)
         const baseUrl = apiUrl.replace(/\/+$/, "")
         const headers: Record<string, string> = {}
-        if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
-        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         const formData = new FormData()
         formData.append("file", file)
@@ -396,8 +388,8 @@ addPropertyControls(InspectLeakButton, {
     apiUrl: {
         type: ControlType.String,
         title: "API Base URL",
-        defaultValue: "https://leaklens-omega.vercel.app",
-        description: "Your ngrok or Cloudflare tunnel URL (no trailing slash).",
+        defaultValue: "https://leaklens-tyrn.vercel.app",
+        description: "Cloud LeakLens backend URL (no trailing slash).",
     },
     buttonLabel: {
         type: ControlType.String,
