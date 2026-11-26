@@ -1,6 +1,6 @@
 /* LeakLens Security Portal — Mobile & Offline Service Worker */
-const APP_SHELL_CACHE = "leaklens-pwa-shell-v2";
-const RUNTIME_CACHE = "leaklens-pwa-runtime-v2";
+const APP_SHELL_CACHE = "leaklens-pwa-shell-v3";
+const RUNTIME_CACHE = "leaklens-pwa-runtime-v3";
 
 const PRECACHE_URLS = [
   "/index.html",

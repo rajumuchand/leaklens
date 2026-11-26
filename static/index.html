@@ -1271,76 +1271,6 @@
         }
 
         /* ==============================================================
-           ROOT AUTH GATE & LOGIN SCREEN OVERLAY
-           ============================================================== */
-        #loadingScreen {
-            position: fixed;
-            inset: 0;
-            z-index: 60;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0, 0, 0, 0.72);
-            backdrop-filter: blur(12px);
-        }
-
-        #loginScreen {
-            position: relative;
-            z-index: 20;
-            min-height: 100vh;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 28px 20px;
-        }
-
-        .login-card {
-            width: 100%;
-            max-width: 470px;
-            background: rgba(6, 6, 10, 0.80);
-            backdrop-filter: blur(22px);
-            -webkit-backdrop-filter: blur(22px);
-            border: 1px solid rgba(243, 242, 248, 0.14);
-            border-radius: 24px;
-            padding: 40px 34px 34px;
-            text-align: center;
-            box-shadow: 0 36px 100px -24px rgba(0, 0, 0, 0.92), 0 0 70px -32px rgba(123, 92, 250, 0.35);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .auth-mode-tabs {
-            display: inline-flex;
-            padding: 4px;
-            border-radius: 999px;
-            background: rgba(243, 242, 248, 0.05);
-            border: 1px solid var(--border-subtle);
-            gap: 4px;
-            margin-top: 4px;
-        }
-
-        .auth-mode-tab {
-            padding: 7px 18px;
-            border-radius: 999px;
-            border: none;
-            background: transparent;
-            color: var(--text-muted);
-            font-family: var(--font-display);
-            font-size: 12.5px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.25s ease;
-        }
-
-        .auth-mode-tab.active {
-            background: var(--violet);
-            color: #FFFFFF;
-            box-shadow: 0 0 18px rgba(123, 92, 250, 0.4);
-        }
-
-        /* ==============================================================
            RESPONSIVE BREAKPOINTS (MATCHING LEAKLENS.FRAMER.AI)
            ============================================================== */
         @media (max-width: 1199.98px) {
@@ -1412,80 +1342,6 @@
         <canvas id="mindFieldCanvas"></canvas>
     </div>
 
-    <!-- Root Session Check Loader -->
-    <div id="loadingScreen">
-        <div class="mono-badge violet" style="padding: 10px 18px; font-size: 12px;">
-            <span class="status-dot"></span>
-            <span>VERIFYING LINKLENS SESSION...</span>
-        </div>
-    </div>
-
-    <!-- PAGE 1: LOGIN & REGISTER VIEW (Shown when Unauthenticated) -->
-    <section id="loginScreen" aria-label="Authentication Portal">
-        <div class="login-card">
-            <div style="display:inline-flex; align-items:center; gap:10px;">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <defs>
-                        <linearGradient id="mflogin" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0" stop-color="#FFB627" />
-                            <stop offset="0.55" stop-color="#9A82FF" />
-                            <stop offset="1" stop-color="#2BD8C8" />
-                        </linearGradient>
-                    </defs>
-                    <path d="M12 2.5 L21.5 19.5 L2.5 19.5 Z" fill="url(#mflogin)" opacity="0.95" />
-                    <path d="M12 2.5 L13.6 14.2 M21.5 19.5 L13.6 14.2 M2.5 19.5 L13.6 14.2" stroke="#000" stroke-opacity="0.55" stroke-width="1.3" />
-                </svg>
-                <span style="font-family:var(--font-display); font-size:22px; font-weight:500; letter-spacing:-0.03em;">LeakLens</span>
-            </div>
-
-            <div class="kicker" style="font-size:11.5px;">SentinelTrace Cryptographic Security Portal</div>
-
-            <h1 style="font-family:var(--font-display); font-size:34px; font-weight:500; letter-spacing:-0.04em; margin:4px 0 0; line-height:1.1;">
-                Welcome to LeakLens
-            </h1>
-
-            <div class="auth-mode-tabs">
-                <button type="button" id="modeSignInBtn" class="auth-mode-tab active" onclick="switchLoginMode('signin')">Sign In</button>
-                <button type="button" id="modeRegisterBtn" class="auth-mode-tab" onclick="switchLoginMode('register')">Register</button>
-            </div>
-
-            <p id="loginSubtitle" class="muted-copy" style="font-size:14px; max-width:360px;">
-                Sign in with your Google account to unlock invisible watermarking, forensic leak inspection, and offline RAM DRM controls.
-            </p>
-
-            <div id="google-login-btn" style="margin: 8px 0 4px; min-height: 44px; display:flex; align-items:center; justify-content:center;"></div>
-
-            <div style="width:100%; display:flex; align-items:center; gap:10px; margin:2px 0; color:var(--text-muted); font-size:11px; font-family:var(--font-mono);">
-                <div style="flex:1; height:1px; background:var(--border-subtle);"></div>
-                <span>OR SUPABASE AUTH</span>
-                <div style="flex:1; height:1px; background:var(--border-subtle);"></div>
-            </div>
-
-            <form onsubmit="event.preventDefault(); submitLoginCardSupabase();" style="width:100%; display:flex; flex-direction:column; gap:10px;">
-                <input id="loginCardEmail" class="glass-input" type="email" required placeholder="operator@company.com" autocomplete="email" />
-                <input id="loginCardPassword" class="glass-input" type="password" required minlength="6" placeholder="Password (min 6 characters)" autocomplete="current-password" />
-                <button type="submit" id="loginCardSubmitBtn" class="lt-pill sm" style="width:100%; justify-content:center;">Sign In with Supabase</button>
-            </form>
-
-            <div style="width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-                <button type="button" id="installLoginBtn" class="lt-pill sm teal" onclick="triggerPwaInstall()" style="font-size:11.5px;">+ Install Mobile App</button>
-                <a href="https://linklenslogin.framer.website/" target="_blank" rel="noopener" style="font-size:11.5px; color:var(--text-muted); text-decoration:underline;">External Framer Login ↗</a>
-            </div>
-
-            <div id="loginErrorMsg" style="display:none; font-family:var(--font-mono); font-size:12px; color:#FF8DA1; background:rgba(255,59,92,0.12); border:1px solid rgba(255,59,92,0.4); border-radius:12px; padding:10px 14px; width:100%;"></div>
-
-            <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:6px;">
-                <span class="mono-badge gold">Zero-Width Stego</span>
-                <span class="mono-badge violet">HMAC-SHA256</span>
-                <span class="mono-badge teal">RS256 RAM Leases</span>
-            </div>
-
-            <div style="font-size:11.5px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:14px; width:100%;">
-                Verified Gmail email auto-binds to generated forensic watermarks.
-            </div>
-        </div>
-    </section>
-
     <!-- Real-Time Critical Webhook Toast -->
     <div id="webhookToast" role="alert" aria-live="assertive">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
@@ -1497,8 +1353,8 @@
         <div id="webhookToastBody" style="font-family:var(--font-mono); font-size:12.5px; color:#FFE4E9; line-height:1.45;"></div>
     </div>
 
-    <!-- Floating Navigation Bar (Shown after Auth) -->
-    <header class="nav-shell" id="topNav" style="display:none;">
+    <!-- Floating Navigation Bar -->
+    <header class="nav-shell" id="topNav">
         <div class="nav-wrap">
             <a href="#top" class="nav-brand">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1530,7 +1386,7 @@
 
             <div class="nav-mobile-actions">
                 <button type="button" id="installNavBtn" class="lt-pill sm teal" onclick="triggerPwaInstall()" style="height:36px;">+ Install App</button>
-                <button type="button" class="lt-pill sm danger" onclick="handleLogout()" style="height:36px;">Logout</button>
+                <button type="button" id="navLogoutBtn" class="lt-pill sm danger" onclick="handleLogout()" style="height:36px; display:none;">Logout</button>
             </div>
         </div>
     </header>
@@ -1550,8 +1406,8 @@
         </div>
     </div>
 
-    <!-- PAGE 2: MAIN LINKLENS / SENTINELTRACE WEBSITE (Shown after Auth) -->
-    <div class="page-layer" id="mainWebsiteView" style="display:none;">
+    <!-- MAIN LINKLENS / SENTINELTRACE PORTAL -->
+    <div class="page-layer" id="mainWebsiteView">
         <!-- Fixed Diagonal Security Watermark Layer across Reader View (pointer-events: none, z-index: 9999) -->
         <div id="globalSecurityWatermark" aria-hidden="true" style="position:fixed; inset:-30%; z-index:9999; pointer-events:none; user-select:none; -webkit-user-select:none; ms-user-select:none; transform:rotate(-22deg); opacity:0.12; display:flex; flex-direction:column; justify-content:space-around; gap:44px; font-family:var(--font-mono); font-size:12px; font-weight:700; color:#FFB627; white-space:nowrap;"></div>
         <!-- SECTION 1: HERO (CUE: HERO -> 3D PARTICLE BRAIN ON RIGHT) -->
@@ -1664,8 +1520,6 @@
                             <div id="google-signin-btn"></div>
                             <button type="button" class="lt-pill sm teal" onclick="toggleSupabaseAuthBox()">Supabase Login</button>
                             <button type="button" class="lt-pill sm secondary" onclick="toggleSupabaseAuditPanel()">Supabase Ledger</button>
-                            <a href="https://linklenslogin.framer.website/" target="_blank" rel="noopener" class="lt-pill sm secondary">Framer Login ↗</a>
-                            <button id="authGuardToggleBtn" class="lt-pill sm secondary" onclick="toggleAuthGuard()">Route Guard: OFF</button>
                             <div id="googleClientCfgBox" style="display:none; align-items:center; gap:8px;">
                                 <input id="googleClientIdInput" class="glass-input" type="text" placeholder="Paste Google OAuth Client ID (.apps.googleusercontent.com)" style="padding:6px 10px; font-size:11.5px; width:280px;" />
                                 <button class="lt-pill sm gold" onclick="saveGoogleClientId()">Save Client ID</button>
@@ -3023,7 +2877,6 @@
             if (card) card.classList.toggle('op');
         }
 
-        const FRAMER_LOGIN_URL = 'https://linklenslogin.framer.website/';
         const SUPABASE_URL = 'https://fpidtcofamgfyyiwyshy.supabase.co';
         const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_g4OZs168BBOG7KkUOAj1ng_ZCHTXmBY';
         const CLOUD_BACKEND_ORIGIN = 'https://leaklens-omega.vercel.app';
@@ -3381,7 +3234,7 @@
 
         function updateInstallButtonsVisibility() {
             const installed = isRunningStandalonePwa();
-            for (const id of ['installNavBtn', 'installHeroBtn', 'installLoginBtn']) {
+            for (const id of ['installNavBtn', 'installHeroBtn']) {
                 const btn = document.getElementById(id);
                 if (btn) btn.style.display = installed ? 'none' : 'inline-flex';
             }
@@ -4168,131 +4021,58 @@
             }
         }
 
-        /* ---------------- ROOT AUTH GATE & GOOGLE SESSION FLOW ---------------- */
+        /* ---------------- OPTIONAL CONSOLE AUTH & SESSION FLOW ---------------- */
         const DEFAULT_GOOGLE_CLIENT_ID = '243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com';
         const storedClientId = localStorage.getItem('google_client_id');
         let GOOGLE_CLIENT_ID = (storedClientId && !storedClientId.startsWith('YOUR_GOOGLE_CLIENT_ID')) ? storedClientId : DEFAULT_GOOGLE_CLIENT_ID;
         let authedUser = null;
 
-        let activeLoginMode = 'signin';
-        function switchLoginMode(mode) {
-            activeLoginMode = mode === 'register' ? 'register' : 'signin';
-            const sub = document.getElementById('loginSubtitle');
-            const sBtn = document.getElementById('modeSignInBtn');
-            const rBtn = document.getElementById('modeRegisterBtn');
-            const submitBtn = document.getElementById('loginCardSubmitBtn');
-            if (!sub || !sBtn || !rBtn) return;
-            if (activeLoginMode === 'register') {
-                sBtn.classList.remove('active');
-                rBtn.classList.add('active');
-                sub.textContent = 'Register with Google or Supabase Email to bind forensic attribution keys and create your workspace session.';
-                if (submitBtn) submitBtn.textContent = 'Register with Supabase';
-            } else {
-                rBtn.classList.remove('active');
-                sBtn.classList.add('active');
-                sub.textContent = 'Sign in with Google or Supabase Email to unlock invisible watermarking, forensic leak inspection, and offline RAM DRM controls.';
-                if (submitBtn) submitBtn.textContent = 'Sign In with Supabase';
-            }
-        }
-
-        async function submitLoginCardSupabase() {
-            const email = (document.getElementById('loginCardEmail')?.value || '').trim();
-            const password = document.getElementById('loginCardPassword')?.value || '';
-            const errBox = document.getElementById('loginErrorMsg');
-            const submitBtn = document.getElementById('loginCardSubmitBtn');
-            const mode = activeLoginMode === 'register' ? 'signup' : 'signin';
-            if (!email || password.length < 6) {
-                if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FF8DA1'; errBox.textContent = 'Enter a valid email and password (min 6 characters).'; }
-                return;
-            }
-            if (errBox) errBox.style.display = 'none';
-            if (submitBtn) submitBtn.disabled = true;
-            try {
-                const resp = await fetch(resolveApiUrl(`/api/auth/supabase/${mode}`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
-                });
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) {
-                    if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FF8DA1'; errBox.textContent = data.detail || 'Authentication failed.'; }
-                    return;
-                }
-                if (data.confirmation_required) {
-                    if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FFB627'; errBox.textContent = data.message || 'Check your email to confirm account, then Sign In.'; }
-                    return;
-                }
-                if (data.supabase_access_token) localStorage.setItem('supabase_access_token', data.supabase_access_token);
-                if (data.access_token) localStorage.setItem('access_token', data.access_token);
-                if (data.user?.email) localStorage.setItem('user_email', data.user.email);
-                if (data.user?.name) localStorage.setItem('user_name', data.user.name);
-                unlockMainWebsiteView(data.user || { email, name: email.split('@')[0] });
-            } catch {
-                if (errBox) { errBox.style.display = 'block'; errBox.style.color = '#FF8DA1'; errBox.textContent = 'Could not reach backend authentication server.'; }
-            } finally {
-                if (submitBtn) submitBtn.disabled = false;
-            }
-        }
-
-        function unlockMainWebsiteView(user) {
-            authedUser = user;
-            const loader = document.getElementById('loadingScreen');
-            const loginView = document.getElementById('loginScreen');
+        function setPortalSessionView(user) {
             const topNav = document.getElementById('topNav');
             const mainView = document.getElementById('mainWebsiteView');
-            if (loader) loader.style.display = 'none';
-            if (loginView) loginView.style.display = 'none';
             if (topNav) topNav.style.display = 'flex';
             if (mainView) mainView.style.display = 'block';
 
-            setAuthenticatedUserUi(user);
-            renderViewportWatermark();
             const navEmail = document.getElementById('navUserEmail');
-            if (navEmail && user?.email) {
-                navEmail.textContent = user.email;
-                navEmail.style.display = 'inline-flex';
+            const navLogout = document.getElementById('navLogoutBtn');
+
+            if (user && user.email) {
+                authedUser = user;
+                setAuthenticatedUserUi(user);
+                if (navEmail) {
+                    navEmail.textContent = user.email;
+                    navEmail.style.display = 'inline-flex';
+                }
+                if (navLogout) navLogout.style.display = 'inline-flex';
+            } else {
+                authedUser = null;
+                setAuthenticatedUserUi(null);
+                if (navEmail) {
+                    navEmail.textContent = '';
+                    navEmail.style.display = 'none';
+                }
+                if (navLogout) navLogout.style.display = 'none';
+                initGoogleIdentity();
             }
 
-            // Ensure hero & visible reveal animations activate right when view unlocks
+            renderViewportWatermark();
             document.querySelectorAll('.mf-hero-anim, .hero-section .mf-rv').forEach((el) => el.classList.add('in'));
             window.dispatchEvent(new Event('scroll'));
         }
+        const unlockMainWebsiteView = setPortalSessionView;
 
-        function lockToLoginView(errText) {
-            authedUser = null;
-            const loader = document.getElementById('loadingScreen');
-            const loginView = document.getElementById('loginScreen');
-            const topNav = document.getElementById('topNav');
-            const mainView = document.getElementById('mainWebsiteView');
-            if (loader) loader.style.display = 'none';
-            if (topNav) topNav.style.display = 'none';
-            if (mainView) mainView.style.display = 'none';
-            if (loginView) loginView.style.display = 'flex';
-            const errBox = document.getElementById('loginErrorMsg');
-            if (errBox) {
-                errBox.textContent = errText || '';
-                errBox.style.display = errText ? 'block' : 'none';
+        function enterGuestPortal(noticeText) {
+            setPortalSessionView(null);
+            const promptCopy = document.getElementById('authPromptCopy');
+            if (promptCopy) {
+                if (noticeText) {
+                    promptCopy.style.color = '#FF8DA1';
+                    promptCopy.textContent = noticeText;
+                } else {
+                    promptCopy.style.color = 'var(--text-muted)';
+                    promptCopy.textContent = 'Sign in with Google or Supabase Auth to persist encrypted traces with RLS.';
+                }
             }
-            initGoogleIdentity();
-        }
-
-        function isRouteGuardActive() {
-            return new URLSearchParams(window.location.search).get('auth_guard') === '1' ||
-                   localStorage.getItem('leaklens_auth_guard') === '1';
-        }
-
-        function updateAuthGuardButtonUi() {
-            const btn = document.getElementById('authGuardToggleBtn');
-            if (!btn) return;
-            const on = isRouteGuardActive();
-            btn.textContent = on ? 'Route Guard: ON' : 'Route Guard: OFF';
-            btn.className = on ? 'lt-pill sm teal' : 'lt-pill sm secondary';
-        }
-
-        function toggleAuthGuard() {
-            const next = !isRouteGuardActive();
-            localStorage.setItem('leaklens_auth_guard', next ? '1' : '0');
-            updateAuthGuardButtonUi();
         }
 
         function setAuthenticatedUserUi(user) {
@@ -4328,15 +4108,15 @@
             if (wmRec) wmRec.value = `${authedUser.name} (${authedUser.email})`;
         }
 
-        function buildFramerLoginRedirect() {
-            const sep = FRAMER_LOGIN_URL.includes('?') ? '&' : '?';
-            const returnDest = `${window.location.origin}${window.location.pathname}`;
-            return `${FRAMER_LOGIN_URL}${sep}redirect=${encodeURIComponent(returnDest)}`;
-        }
-
         function handleLogout() {
-            localStorage.clear();
-            lockToLoginView('');
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('supabase_access_token');
+            localStorage.removeItem('user_email');
+            localStorage.removeItem('user_name');
+            localStorage.removeItem('user_picture');
+            const wmRec = document.getElementById('wmRecipient');
+            if (wmRec) wmRec.value = 'USR-8492 (Alice)';
+            enterGuestPortal('');
         }
         const logoutGoogleSession = handleLogout;
 
@@ -4360,8 +4140,6 @@
         }
 
         async function handleGoogleCallback(response) {
-            const errBox = document.getElementById('loginErrorMsg');
-            if (errBox) errBox.style.display = 'none';
             try {
                 const res = await apiFetch('/api/auth/google', {
                     method: 'POST',
@@ -4374,19 +4152,17 @@
                     localStorage.setItem('user_email', data.user.email);
                     localStorage.setItem('user_name', data.user.name);
                     if (data.user.picture) localStorage.setItem('user_picture', data.user.picture);
-                    unlockMainWebsiteView(data.user);
+                    setPortalSessionView(data.user);
                 } else {
-                    const msg = data.detail || 'Login failed! Please try again.';
-                    lockToLoginView(msg);
+                    enterGuestPortal(data.detail || 'Google login failed. Please try again.');
                 }
-            } catch (err) {
-                lockToLoginView('Could not reach backend authentication server.');
+            } catch {
+                enterGuestPortal('Could not reach backend authentication server.');
             }
         }
         const handleGoogleResponse = handleGoogleCallback;
 
         function initGoogleIdentity() {
-            const loginTarget = document.getElementById('google-login-btn');
             const barTarget = document.getElementById('google-signin-btn');
             if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE_CLIENT_ID')) return;
             if (window.google && window.google.accounts && window.google.accounts.id) {
@@ -4394,16 +4170,6 @@
                     client_id: GOOGLE_CLIENT_ID,
                     callback: handleGoogleCallback
                 });
-                if (loginTarget && !authedUser) {
-                    loginTarget.innerHTML = '';
-                    window.google.accounts.id.renderButton(loginTarget, {
-                        theme: 'filled_blue',
-                        size: 'large',
-                        shape: 'pill',
-                        width: 280,
-                        text: 'continue_with'
-                    });
-                }
                 if (barTarget && !authedUser) {
                     barTarget.innerHTML = '';
                     window.google.accounts.id.renderButton(barTarget, {
@@ -4417,14 +4183,11 @@
         }
 
         (async function initAuth() {
-            updateAuthGuardButtonUi();
-
-            // A. Check if returning from https://linklenslogin.framer.website/ with ?token=... in URL
+            // Clean up any optional ?token=... query handoff if present
             const urlParams = new URLSearchParams(window.location.search);
             const tokenFromUrl = urlParams.get('token');
             const emailFromUrl = urlParams.get('email');
 
-            // Fallback hash support too (#access_token=...)
             const hash = window.location.hash || '';
             const hashMatch = hash.match(/access_token=([^&]+)/);
             const handoffToken = tokenFromUrl || (hashMatch && hashMatch[1] ? decodeURIComponent(hashMatch[1]) : null);
@@ -4435,19 +4198,18 @@
                 token = handoffToken;
                 localStorage.setItem('access_token', token);
                 if (emailFromUrl) localStorage.setItem('user_email', emailFromUrl);
-                // Clean query params from address bar cleanly
                 try {
                     window.history.replaceState({}, document.title, window.location.pathname);
                 } catch {}
             }
 
-            // B. If no token exists yet, present the built-in 24/7 Cloud + Supabase Login Portal cleanly
+            // Open straight into the main LeakLens portal even when unauthenticated (Guest Session)
             if (!token) {
-                lockToLoginView('');
+                enterGuestPortal('');
                 return;
             }
 
-            // C. Verify session against FastAPI / Supabase Auth with graceful offline JWT fallback
+            // Verify optional saved session with offline JWT fallback
             if (token && token !== 'demo_client_token' && token.includes('.')) {
                 try {
                     const meResp = await apiFetch('/api/auth/me');
@@ -4458,7 +4220,7 @@
                             localStorage.setItem('user_name', meData.user.name || meData.user.email);
                             const wmRec = document.getElementById('wmRecipient');
                             if (wmRec) wmRec.value = meData.user.email;
-                            unlockMainWebsiteView(meData.user);
+                            setPortalSessionView(meData.user);
                             return;
                         }
                     }
@@ -4466,8 +4228,12 @@
             }
             const offlineDecoded = decodeJwtOffline(token);
             if (offlineDecoded?.expired) {
-                localStorage.clear();
-                lockToLoginView('Your session expired. Please sign in again.');
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('supabase_access_token');
+                localStorage.removeItem('user_email');
+                localStorage.removeItem('user_name');
+                localStorage.removeItem('user_picture');
+                enterGuestPortal('Your previous session expired — sign in below to sync with RLS.');
                 return;
             }
             const resolvedEmail = offlineDecoded?.user?.email || localStorage.getItem('user_email') || 'security_user@leaklens.io';
@@ -4476,7 +4242,7 @@
             localStorage.setItem('user_name', resolvedName);
             const wmRec = document.getElementById('wmRecipient');
             if (wmRec && resolvedEmail) wmRec.value = resolvedEmail;
-            unlockMainWebsiteView({ email: resolvedEmail, name: resolvedName, picture: offlineDecoded?.user?.picture || '' });
+            setPortalSessionView({ email: resolvedEmail, name: resolvedName, picture: offlineDecoded?.user?.picture || '' });
         })();
     </script>
 </body>
