@@ -1999,7 +1999,7 @@ def google_auth_endpoint(req: GoogleAuthRequest, request: Request):
 
         session_token = create_jwt_token(email, name, picture)
         proto = _get_forwarded_proto(request)
-        fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
+        fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "leaklens-tyrn.vercel.app"
 
         return {
             "status": "success",

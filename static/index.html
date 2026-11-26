@@ -2880,13 +2880,13 @@
 
         const SUPABASE_URL = 'https://fpidtcofamgfyyiwyshy.supabase.co';
         const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_g4OZs168BBOG7KkUOAj1ng_ZCHTXmBY';
-        const CLOUD_BACKEND_ORIGIN = 'https://leaklens-omega.vercel.app';
+        const CLOUD_BACKEND_ORIGIN = 'https://leaklens-tyrn.vercel.app';
         const CLIENT_ONLY_MODE = false;
 
         function resolveApiUrl(path) {
             if (!path.startsWith('/')) return path;
             const host = window.location.hostname || '';
-            const isSameOriginHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.vercel.app');
+            const isSameOriginHost = host.endsWith('.vercel.app');
             return isSameOriginHost ? path : `${CLOUD_BACKEND_ORIGIN}${path}`;
         }
 

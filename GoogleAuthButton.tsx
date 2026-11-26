@@ -29,9 +29,9 @@ export default function GoogleAuthButton(props: {
     onLoginSuccess?: (user: GoogleUser) => void
 }) {
     const {
-        apiUrl = "https://leaklens-omega.vercel.app",
+        apiUrl = "https://leaklens-tyrn.vercel.app",
         clientId = "81725914024-6s088pnfsi11jl8tug105mec0pguh3be.apps.googleusercontent.com",
-        redirectUrl = "https://leaklens-omega.vercel.app/",
+        redirectUrl = "https://leaklens-tyrn.vercel.app/",
         enableRedirect = true,
         accentColor = "#7B5CFA",
         textColor = "#F3F2F8",
