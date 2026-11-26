@@ -127,6 +127,15 @@ export default function GoogleAuthButton(props: {
             }
             if (onLoginSuccess) onLoginSuccess(resolvedUser)
 
+            if (typeof window !== "undefined" && window.parent && window.parent !== window) {
+                try {
+                    window.parent.postMessage(
+                        { type: "leaklens:auth-success", token: sessionToken, user: resolvedUser },
+                        "*"
+                    )
+                } catch {}
+            }
+
             if (
                 enableRedirect &&
                 (redirectUrl || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("redirect"))) &&
@@ -134,7 +143,14 @@ export default function GoogleAuthButton(props: {
                 !isFramerPreviewOrCanvas()
             ) {
                 setRedirecting(true)
-                window.location.href = buildRedirectTarget(sessionToken, resolvedUser.email)
+                const dest = buildRedirectTarget(sessionToken, resolvedUser.email)
+                try {
+                    if (window.top) {
+                        window.top.location.href = dest
+                        return
+                    }
+                } catch {}
+                window.location.href = dest
             }
         },
         [baseUrl, enableRedirect, redirectUrl, onLoginSuccess]
