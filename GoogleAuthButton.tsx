@@ -30,7 +30,7 @@ export default function GoogleAuthButton(props: {
 }) {
     const {
         apiUrl = "https://leaklens-omega.vercel.app",
-        clientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
+        clientId = "81725914024-6s088pnfsi11jl8tug105mec0pguh3be.apps.googleusercontent.com",
         redirectUrl = "https://leaklens-omega.vercel.app/",
         enableRedirect = true,
         accentColor = "#7B5CFA",
@@ -76,8 +76,6 @@ export default function GoogleAuthButton(props: {
             setError(null)
             try {
                 const headers: Record<string, string> = { "Content-Type": "application/json" }
-                if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
-                if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
                 const res = await fetch(`${baseUrl}/api/auth/google`, {
                     method: "POST",
@@ -125,8 +123,6 @@ export default function GoogleAuthButton(props: {
         const headers: Record<string, string> = {
             Authorization: `Bearer ${storedToken}`,
         }
-        if (baseUrl.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true"
-        if (baseUrl.includes("loca.lt")) headers["bypass-tunnel-reminder"] = "true"
 
         fetch(`${baseUrl}/api/auth/me`, { headers })
             .then((r) => (r.ok ? r.json() : null))
@@ -324,7 +320,7 @@ addPropertyControls(GoogleAuthButton, {
     clientId: {
         type: ControlType.String,
         title: "Google Client ID",
-        defaultValue: "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
+        defaultValue: "81725914024-6s088pnfsi11jl8tug105mec0pguh3be.apps.googleusercontent.com",
     },
     redirectUrl: {
         type: ControlType.String,
