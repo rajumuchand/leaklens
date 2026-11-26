@@ -9,6 +9,7 @@ import base64
 import secrets
 from typing import Optional
 import jwt
+import requests as http_requests
 from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File, Form
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -63,6 +64,30 @@ async def https_forwarded_header_middleware(request: Request, call_next):
     response.headers["X-Resolved-Proto"] = proto
     return response
 
+def _load_local_env_files() -> None:
+    """Loads .env and .env.local key=value pairs locally if not already in os.environ."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    for filename in (".env", ".env.local"):
+        path = os.path.join(base_dir, filename)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                for raw_line in fh:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+        except Exception:
+            pass
+
+
+_load_local_env_files()
+
 SECRET_KEY = b"synapse_hackathon_secret_2026"
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com")
 ALLOWED_GOOGLE_CLIENT_IDS = {
@@ -77,6 +102,379 @@ ALLOWED_GOOGLE_CLIENT_IDS = {
 }
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "synapse_jwt_secret_key_2026")
 ALGORITHM = "HS256"
+
+SUPABASE_PROJECT_REF = "fpidtcofamgfyyiwyshy"
+SUPABASE_URL = (
+    os.environ.get("SUPABASE_URL")
+    or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+    or f"https://{SUPABASE_PROJECT_REF}.supabase.co"
+).rstrip("/")
+SUPABASE_PUBLISHABLE_KEY = (
+    os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+    or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
+    or "sb_publishable_g4OZs168BBOG7KkUOAj1ng_ZCHTXmBY"
+)
+SUPABASE_ANON_KEY = (
+    os.environ.get("SUPABASE_ANON_KEY")
+    or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwaWR0Y29mYW1nZnl5aXd5c2h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU1MDI2ODQsImV4cCI6MjExMTA3ODY4NH0.s6p3Gsf_mEYih_rMnpNdDj-6t56Ws36xTEQgH-iyvp0"
+)
+SUPABASE_SERVICE_ROLE_KEY = (
+    os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    or os.environ.get("SUPABASE_SECRET_KEY")
+    or ""
+)
+
+DEFAULT_CONFIDENTIAL_DOCS = [
+    {
+        "slug": "helios-brief",
+        "title": "Project Helios — Executive M&A Valuation Brief",
+        "classification": "STRICTLY CONFIDENTIAL",
+        "content": (
+            "CONFIDENTIAL M&A VALUATION BRIEF: Project Helios buyout ceiling is set at $142M for Q1 2027.\n"
+            "Executive committee approval remains strictly embargoed until Monday market open.\n"
+            "Unauthorized external sharing violates Section 4 NDA terms and triggers immediate revocation."
+        ),
+    },
+    {
+        "slug": "security-audit",
+        "title": "SentinelTrace — Q4 Zero-Trust Security Audit",
+        "classification": "INTERNAL RESTRICTED",
+        "content": (
+            "CONFIDENTIAL SECURITY AUDIT BRIEF: All ephemeral AES-256-GCM decryption keys rotate via hardware monotonic counters.\n"
+            "Zero plaintext remnants persist to disk across disconnected sessions.\n"
+            "Forensic attribution payloads survive arbitrary snippet truncation above 10% text recovery."
+        ),
+    },
+    {
+        "slug": "nda-addendum",
+        "title": "Board Committee — Strategic Distribution Addendum",
+        "classification": "EYES ONLY",
+        "content": (
+            "CONFIDENTIAL DISTRIBUTION ADDENDUM: Every distributed copy carries redundant zero-width cryptographic chunks.\n"
+            "Extracted leak fragments verify against HMAC-SHA256 signatures even after editing.\n"
+            "Revoked sessions overwrite decryption buffers instantaneously with zeroed byte blocks."
+        ),
+    },
+]
+
+
+class SupabaseRestStore:
+    """
+    Lightweight Supabase PostgREST + Auth REST integration for LeakLens.
+    - Uses SUPABASE_SERVICE_ROLE_KEY on the server when configured.
+    - Uses verified user Supabase JWT + publishable key when authenticated via Supabase Auth.
+    - Never exposes secret keys and gracefully falls back if disconnected.
+    """
+
+    def __init__(self, url: str, publishable_key: str, anon_key: str, service_role_key: str = ""):
+        self.url = url.rstrip("/")
+        self.publishable_key = publishable_key
+        self.anon_key = anon_key
+        self.service_role_key = service_role_key
+        self.session = http_requests.Session()
+
+    @property
+    def has_service_role(self) -> bool:
+        return bool(self.service_role_key)
+
+    def _headers(self, user_jwt: Optional[str] = None, allow_public: bool = False) -> Optional[dict]:
+        if user_jwt:
+            return {
+                "apikey": self.publishable_key,
+                "Authorization": f"Bearer {user_jwt}",
+                "Content-Type": "application/json",
+            }
+        if self.service_role_key:
+            return {
+                "apikey": self.service_role_key,
+                "Authorization": f"Bearer {self.service_role_key}",
+                "Content-Type": "application/json",
+            }
+        if allow_public and self.publishable_key:
+            return {
+                "apikey": self.publishable_key,
+                "Content-Type": "application/json",
+            }
+        return None
+
+    def verify_user_jwt(self, user_jwt: str) -> Optional[dict]:
+        if not user_jwt:
+            return None
+        try:
+            resp = self.session.get(
+                f"{self.url}/auth/v1/user",
+                headers={
+                    "apikey": self.publishable_key or self.anon_key,
+                    "Authorization": f"Bearer {user_jwt}",
+                },
+                timeout=4,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        return None
+
+    def sign_up_password(self, email: str, password: str, name: str = "") -> tuple[int, dict]:
+        try:
+            resp = self.session.post(
+                f"{self.url}/auth/v1/signup",
+                headers={
+                    "apikey": self.publishable_key or self.anon_key,
+                    "Content-Type": "application/json",
+                },
+                json={"email": email, "password": password, "data": {"name": name or email.split("@")[0]}},
+                timeout=6,
+            )
+            return resp.status_code, resp.json()
+        except Exception as exc:
+            return 503, {"error_description": f"Supabase Auth unreachable: {exc}"}
+
+    def sign_in_password(self, email: str, password: str) -> tuple[int, dict]:
+        try:
+            resp = self.session.post(
+                f"{self.url}/auth/v1/token?grant_type=password",
+                headers={
+                    "apikey": self.publishable_key or self.anon_key,
+                    "Content-Type": "application/json",
+                },
+                json={"email": email, "password": password},
+                timeout=6,
+            )
+            return resp.status_code, resp.json()
+        except Exception as exc:
+            return 503, {"error_description": f"Supabase Auth unreachable: {exc}"}
+
+    def fetch_confidential_documents(self, user_jwt: Optional[str] = None) -> list[dict]:
+        hdrs = self._headers(user_jwt=user_jwt, allow_public=True)
+        if not hdrs:
+            return DEFAULT_CONFIDENTIAL_DOCS
+        try:
+            resp = self.session.get(
+                f"{self.url}/rest/v1/confidential_documents",
+                headers=hdrs,
+                params={"select": "slug,title,classification,content", "order": "id.asc"},
+                timeout=4,
+            )
+            if resp.status_code == 200:
+                rows = resp.json()
+                if isinstance(rows, list) and rows:
+                    return rows
+        except Exception:
+            pass
+        return DEFAULT_CONFIDENTIAL_DOCS
+
+    def record_watermark(self, row: dict, user_jwt: Optional[str] = None) -> bool:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return False
+        hdrs["Prefer"] = "return=minimal"
+        try:
+            resp = self.session.post(f"{self.url}/rest/v1/watermark_records", headers=hdrs, json=row, timeout=4)
+            return resp.status_code in (200, 201, 204)
+        except Exception:
+            return False
+
+    def lookup_homoglyph_signature(self, signature: str, user_jwt: Optional[str] = None) -> Optional[dict]:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return None
+        try:
+            resp = self.session.get(
+                f"{self.url}/rest/v1/watermark_records",
+                headers=hdrs,
+                params={
+                    "select": "recipient_id,session_id,signature,sig_bits,full_bits",
+                    "signature": f"eq.{signature}",
+                    "order": "id.desc",
+                    "limit": "1",
+                },
+                timeout=4,
+            )
+            if resp.status_code == 200:
+                rows = resp.json()
+                if rows:
+                    return rows[0]
+        except Exception:
+            pass
+        return None
+
+    def fetch_recent_homoglyph_records(self, limit: int = 50, user_jwt: Optional[str] = None) -> list[dict]:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return []
+        try:
+            resp = self.session.get(
+                f"{self.url}/rest/v1/watermark_records",
+                headers=hdrs,
+                params={
+                    "select": "recipient_id,session_id,signature,sig_bits,full_bits",
+                    "full_bits": "not.is.null",
+                    "order": "id.desc",
+                    "limit": str(limit),
+                },
+                timeout=4,
+            )
+            if resp.status_code == 200:
+                return resp.json() or []
+        except Exception:
+            pass
+        return []
+
+    def record_inspection(self, row: dict, user_jwt: Optional[str] = None) -> bool:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return False
+        hdrs["Prefer"] = "return=minimal"
+        try:
+            resp = self.session.post(f"{self.url}/rest/v1/leak_inspections", headers=hdrs, json=row, timeout=4)
+            return resp.status_code in (200, 201, 204)
+        except Exception:
+            return False
+
+    def upsert_drm_lease(self, row: dict, user_jwt: Optional[str] = None) -> bool:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return False
+        hdrs["Prefer"] = "resolution=merge-duplicates,return=minimal"
+        try:
+            resp = self.session.post(
+                f"{self.url}/rest/v1/drm_leases?on_conflict=lease_id",
+                headers=hdrs,
+                json=row,
+                timeout=4,
+            )
+            return resp.status_code in (200, 201, 204)
+        except Exception:
+            return False
+
+    def get_drm_lease(self, lease_id: str, user_jwt: Optional[str] = None) -> Optional[dict]:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return None
+        try:
+            resp = self.session.get(
+                f"{self.url}/rest/v1/drm_leases",
+                headers=hdrs,
+                params={"select": "*", "lease_id": f"eq.{lease_id}", "limit": "1"},
+                timeout=4,
+            )
+            if resp.status_code == 200:
+                rows = resp.json()
+                if rows:
+                    return rows[0]
+        except Exception:
+            pass
+        return None
+
+    def update_drm_lease(self, lease_id: str, patch: dict, user_jwt: Optional[str] = None) -> bool:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return False
+        hdrs["Prefer"] = "return=minimal"
+        patch_payload = {**patch, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        try:
+            resp = self.session.patch(
+                f"{self.url}/rest/v1/drm_leases",
+                headers=hdrs,
+                params={"lease_id": f"eq.{lease_id}"},
+                json=patch_payload,
+                timeout=4,
+            )
+            return resp.status_code in (200, 204)
+        except Exception:
+            return False
+
+    def create_qr_challenge(self, row: dict, user_jwt: Optional[str] = None) -> bool:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return False
+        hdrs["Prefer"] = "return=minimal"
+        try:
+            resp = self.session.post(f"{self.url}/rest/v1/qr_challenges", headers=hdrs, json=row, timeout=4)
+            return resp.status_code in (200, 201, 204)
+        except Exception:
+            return False
+
+    def consume_qr_challenge(self, challenge_code: str, user_jwt: Optional[str] = None) -> Optional[dict]:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return None
+        hdrs["Prefer"] = "return=representation"
+        try:
+            resp = self.session.patch(
+                f"{self.url}/rest/v1/qr_challenges",
+                headers=hdrs,
+                params={"challenge_code": f"eq.{challenge_code}", "consumed": "eq.false"},
+                json={"consumed": True},
+                timeout=4,
+            )
+            if resp.status_code == 200:
+                rows = resp.json()
+                if rows:
+                    return rows[0]
+        except Exception:
+            pass
+        return None
+
+    def fetch_audit_summary(self, user_jwt: Optional[str] = None) -> dict:
+        hdrs = self._headers(user_jwt=user_jwt)
+        if not hdrs:
+            return {
+                "connected": bool(self.url),
+                "writable": False,
+                "auth_mode": "publishable_only",
+                "watermarks": [],
+                "leases": [],
+                "inspections": [],
+            }
+        result = {
+            "connected": True,
+            "writable": True,
+            "auth_mode": "user_jwt_rls" if user_jwt else "service_role",
+            "watermarks": [],
+            "leases": [],
+            "inspections": [],
+        }
+        try:
+            for key, table, sel in (
+                ("watermarks", "watermark_records", "id,recipient_id,session_id,signature,source_type,chunks_embedded,created_at"),
+                ("leases", "drm_leases", "id,lease_id,recipient_id,duration_seconds,revoked,tamper_detected,ram_wiped,created_at"),
+                ("inspections", "leak_inspections", "id,source,match_found,verified,recipient_id,session_id,signature,recovery_mode,created_at"),
+            ):
+                resp = self.session.get(
+                    f"{self.url}/rest/v1/{table}",
+                    headers=hdrs,
+                    params={"select": sel, "order": "id.desc", "limit": "8"},
+                    timeout=4,
+                )
+                if resp.status_code == 200:
+                    result[key] = resp.json() or []
+        except Exception:
+            pass
+        return result
+
+
+supabase_store = SupabaseRestStore(
+    url=SUPABASE_URL,
+    publishable_key=SUPABASE_PUBLISHABLE_KEY,
+    anon_key=SUPABASE_ANON_KEY,
+    service_role_key=SUPABASE_SERVICE_ROLE_KEY,
+)
+
+
+def _extract_supabase_ctx(request: Optional[Request]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extracts optional X-Supabase-Token from request and resolves verified (token, owner_id, owner_email)."""
+    if request is None:
+        return None, None, None
+    sb_token = (request.headers.get("x-supabase-token") or "").strip()
+    if not sb_token:
+        return None, None, None
+    user_info = supabase_store.verify_user_jwt(sb_token)
+    if not user_info:
+        return None, None, None
+    return sb_token, user_info.get("id"), user_info.get("email")
 
 # Master RSA-2048 Keypair for Cryptographically Signed RS256 .lease Tickets
 RSA_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -279,7 +677,63 @@ def _apply_homoglyph_space_watermark(text: str, recipient_id: str, session_id: s
     return re.sub(r"([A-Za-z0-9][\u200b\u200c\u200d]*) (?=[A-Za-z0-9])", _swap_space, text)
 
 
-def _decode_homoglyph_fallback(leaked_text: str) -> Optional[dict]:
+def _persist_watermark(
+    recipient_id: str,
+    session_id: str,
+    signature: str,
+    source_type: str,
+    chunks_embedded: int,
+    filename: Optional[str] = None,
+    request: Optional[Request] = None,
+) -> bool:
+    """Persists watermark ledger row & homoglyph signature bits to Supabase cleanly."""
+    sb_token, owner_id, owner_email = _extract_supabase_ctx(request)
+    sig_bits = format(int(signature, 16), "032b") if re.fullmatch(r"[0-9a-fA-F]{1,8}", signature or "") else ""
+    full_bits = (HOMOGLYPH_SYNC + sig_bits) if sig_bits else ""
+    row = {
+        "signature": signature,
+        "recipient_id": recipient_id,
+        "session_id": session_id,
+        "source_type": source_type,
+        "chunks_embedded": max(0, int(chunks_embedded)),
+    }
+    if filename:
+        row["filename"] = filename
+    if sig_bits:
+        row["sig_bits"] = sig_bits
+    if full_bits:
+        row["full_bits"] = full_bits
+    if owner_id:
+        row["owner_id"] = owner_id
+    if owner_email:
+        row["owner_email"] = owner_email
+    return supabase_store.record_watermark(row, user_jwt=sb_token)
+
+
+def _persist_inspection(res: dict, source_label: str, request: Optional[Request] = None) -> bool:
+    """Records forensic leak inspection outcomes into Supabase leak_inspections."""
+    sb_token, owner_id, owner_email = _extract_supabase_ctx(request)
+    row = {
+        "source": res.get("source") or source_label,
+        "match_found": bool(res.get("match_found")),
+        "verified": bool(res.get("verified")),
+        "recipient_id": res.get("recipient_id"),
+        "session_id": res.get("session_id"),
+        "signature": res.get("signature"),
+        "recovery_mode": res.get("recovery_mode"),
+        "chunks_detected": int(res.get("chunks_detected") or 0),
+        "chunks_verified": int(res.get("chunks_verified") or 0),
+        "vector_layer_found": bool(res.get("vector_layer_found")),
+        "homoglyph_trace_detected": bool(res.get("homoglyph_trace_detected")),
+    }
+    if owner_id:
+        row["owner_id"] = owner_id
+    if owner_email:
+        row["owner_email"] = owner_email
+    return supabase_store.record_inspection(row, user_jwt=sb_token)
+
+
+def _decode_homoglyph_fallback(leaked_text: str, user_jwt: Optional[str] = None) -> Optional[dict]:
     """Recovers forensic attribution from homoglyph word-spacing patterns when zero-width chars are stripped."""
     if HOMOGLYPH_SPACE not in leaked_text:
         return None
@@ -289,13 +743,16 @@ def _decode_homoglyph_fallback(leaked_text: str) -> Optional[dict]:
 
     extracted_bits = "".join("1" if m.group(0) == HOMOGLYPH_SPACE else "0" for m in space_matches)
 
-    # 1. Exact sync header + 32-bit HMAC digest scan
+    # 1. Exact sync header + 32-bit HMAC digest scan (memory + Supabase fallback)
     idx = extracted_bits.find(HOMOGLYPH_SYNC)
     while idx != -1 and idx + 38 <= len(extracted_bits):
         candidate_sig_bits = extracted_bits[idx + 6 : idx + 38]
         candidate_sig = f"{int(candidate_sig_bits, 2):08x}"
-        entry = HOMOGLYPH_LEDGER.get(candidate_sig)
+        entry = HOMOGLYPH_LEDGER.get(candidate_sig) or supabase_store.lookup_homoglyph_signature(
+            candidate_sig, user_jwt=user_jwt
+        )
         if entry:
+            HOMOGLYPH_LEDGER[candidate_sig] = entry
             return {
                 "recipient_id": entry["recipient_id"],
                 "session_id": entry["session_id"],
@@ -309,12 +766,17 @@ def _decode_homoglyph_fallback(leaked_text: str) -> Optional[dict]:
         idx = extracted_bits.find(HOMOGLYPH_SYNC, idx + 1)
 
     # 2. Cyclic partial-snippet alignment against issued homoglyph signatures (>= 12 spaces)
-    if len(extracted_bits) >= 12 and HOMOGLYPH_LEDGER:
+    candidates = list(HOMOGLYPH_LEDGER.values())
+    if not candidates:
+        candidates = supabase_store.fetch_recent_homoglyph_records(limit=50, user_jwt=user_jwt)
+    if len(extracted_bits) >= 12 and candidates:
         best_entry = None
         best_score = 0.0
-        for entry in HOMOGLYPH_LEDGER.values():
-            cyc = entry["full_bits"]
+        for entry in candidates:
+            cyc = entry.get("full_bits") or ""
             n = len(cyc)
+            if not n:
+                continue
             for offset in range(n):
                 matches = sum(1 for i, b in enumerate(extracted_bits) if b == cyc[(offset + i) % n])
                 ratio = matches / len(extracted_bits)
@@ -428,7 +890,7 @@ def _decode_bit_segment(bits_seq: str) -> Optional[dict]:
         return None
 
 
-def decode_watermark_text(leaked_text: str) -> dict:
+def decode_watermark_text(leaked_text: str, user_jwt: Optional[str] = None) -> dict:
     """
     Partial Snippet Recovery Inspector:
     Scans all zero-width watermark blocks in the leaked excerpt. Even if boundary blocks
@@ -450,7 +912,7 @@ def decode_watermark_text(leaked_text: str) -> dict:
     candidate_segments = contiguous_blocks if contiguous_blocks else stream_blocks
 
     if not candidate_segments:
-        homoglyph_hit = _decode_homoglyph_fallback(leaked_text)
+        homoglyph_hit = _decode_homoglyph_fallback(leaked_text, user_jwt=user_jwt)
         if homoglyph_hit:
             return {"match_found": True, **homoglyph_hit}
         return {
@@ -467,7 +929,7 @@ def decode_watermark_text(leaked_text: str) -> dict:
             decoded_matches.append(parsed)
 
     if not decoded_matches:
-        homoglyph_hit = _decode_homoglyph_fallback(leaked_text)
+        homoglyph_hit = _decode_homoglyph_fallback(leaked_text, user_jwt=user_jwt)
         if homoglyph_hit:
             return {"match_found": True, **homoglyph_hit}
         return {
@@ -622,7 +1084,7 @@ def generate_watermarked_pdf_bytes(text: str, recipient_id: str, session_id: str
     return final_buf.getvalue(), signature
 
 
-def inspect_pdf_bytes(pdf_bytes: bytes) -> dict:
+def inspect_pdf_bytes(pdf_bytes: bytes, user_jwt: Optional[str] = None) -> dict:
     """
     Uses pypdf to extract hidden metadata fields AND invisible vector layers
     from an uploaded PDF, verifying the HMAC-SHA256 signature.
@@ -701,7 +1163,7 @@ def inspect_pdf_bytes(pdf_bytes: bytes) -> dict:
         }
 
     # Check 4: Zero-width characters embedded inside PDF text stream
-    zw_res = decode_watermark_text(extracted_text)
+    zw_res = decode_watermark_text(extracted_text, user_jwt=user_jwt)
     if zw_res.get("match_found"):
         zw_res["source"] = "PDF Embedded Zero-Width Text Layer"
         zw_res["metadata_author"] = meta_author
@@ -793,22 +1255,57 @@ def demo_page():
 
 @app.get("/api/health")
 def api_health(request: Request):
+    docs = supabase_store.fetch_confidential_documents()
     return {
         "status": "online",
         "service": "LeakLens Engine",
         "project": "leaklens",
         "version": "3.0.0",
         "scheme": _get_forwarded_proto(request),
+        "supabase": {
+            "project_ref": SUPABASE_PROJECT_REF,
+            "url": SUPABASE_URL,
+            "connected": bool(docs),
+            "documents_count": len(docs),
+            "service_role_configured": supabase_store.has_service_role,
+        },
+    }
+
+
+@app.get("/api/documents")
+def list_confidential_documents(request: Request):
+    """Fetches confidential documents from Supabase Postgres with built-in offline fallback."""
+    sb_token, _, _ = _extract_supabase_ctx(request)
+    docs = supabase_store.fetch_confidential_documents(user_jwt=sb_token)
+    return {
+        "status": "success",
+        "source": "supabase",
+        "project_ref": SUPABASE_PROJECT_REF,
+        "documents": docs,
+    }
+
+
+@app.get("/api/supabase/records")
+def get_supabase_audit_records(request: Request):
+    """Returns persisted watermark, DRM lease, and leak inspection records for this operator/server."""
+    sb_token, _, _ = _extract_supabase_ctx(request)
+    return {
+        "status": "success",
+        "project_ref": SUPABASE_PROJECT_REF,
+        **supabase_store.fetch_audit_summary(user_jwt=sb_token),
     }
 
 
 @app.post("/api/watermark")
-def watermark_endpoint(req: WatermarkRequest):
+def watermark_endpoint(req: WatermarkRequest, request: Request):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
     watermarked_text, chunks_embedded, signature = encode_watermark_text_redundant(
         req.text, req.recipient_id, req.session_id
+    )
+    persisted = _persist_watermark(
+        req.recipient_id, req.session_id, signature, "text", chunks_embedded, request=request
     )
     return {
         "status": "success",
@@ -817,19 +1314,24 @@ def watermark_endpoint(req: WatermarkRequest):
         "signature": signature,
         "chunks_embedded": chunks_embedded,
         "watermarked_text": watermarked_text,
+        "supabase_persisted": persisted,
     }
 
 
 @app.post("/api/inspect")
-def inspect_endpoint(req: InspectRequest):
+def inspect_endpoint(req: InspectRequest, request: Request):
     if not req.leaked_text.strip():
         raise HTTPException(status_code=400, detail="Leaked snippet cannot be empty.")
 
-    return decode_watermark_text(req.leaked_text)
+    sb_token, _, _ = _extract_supabase_ctx(request)
+    res = decode_watermark_text(req.leaked_text, user_jwt=sb_token)
+    res["supabase_persisted"] = _persist_inspection(res, "Text Steganography Inspector", request=request)
+    return res
 
 
 @app.post("/api/watermark-pdf")
 async def watermark_pdf_endpoint(
+    request: Request,
     file: UploadFile = File(...),
     recipient_id: str = Form("USR-8492-ALICE"),
     session_id: str = Form("SESS-2026")
@@ -855,6 +1357,9 @@ async def watermark_pdf_endpoint(
     watermarked_text, chunks_embedded, signature = encode_watermark_text_redundant(
         extracted_text.strip(), recipient_id, session_id
     )
+    persisted = _persist_watermark(
+        recipient_id, session_id, signature, "pdf_extract", chunks_embedded, filename=file.filename, request=request
+    )
 
     return {
         "status": "success",
@@ -865,6 +1370,7 @@ async def watermark_pdf_endpoint(
         "chunks_embedded": chunks_embedded,
         "watermarked_text": watermarked_text,
         "pages_processed": len(reader.pages),
+        "supabase_persisted": persisted,
     }
 
 
@@ -884,6 +1390,9 @@ async def download_watermarked_pdf(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to watermark PDF: {str(e)}")
 
+    _persist_watermark(
+        recipient_id, session_id, signature, "pdf_overlay", 1, filename=file.filename, request=request
+    )
     safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", file.filename)
     proto = _get_forwarded_proto(request)
     return StreamingResponse(
@@ -905,6 +1414,7 @@ def export_watermark_pdf_endpoint(req: WatermarkRequest, request: Request):
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
     pdf_bytes, signature = generate_watermarked_pdf_bytes(req.text, req.recipient_id, req.session_id)
+    _persist_watermark(req.recipient_id, req.session_id, signature, "pdf_export", 1, request=request)
     safe_session = re.sub(r"[^a-zA-Z0-9_-]", "_", req.session_id)
     proto = _get_forwarded_proto(request)
     return Response(
@@ -921,15 +1431,18 @@ def export_watermark_pdf_endpoint(req: WatermarkRequest, request: Request):
 
 
 @app.post("/api/inspect-pdf")
-async def inspect_pdf_endpoint(file: UploadFile = File(...)):
+async def inspect_pdf_endpoint(request: Request, file: UploadFile = File(...)):
     pdf_bytes = await file.read()
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
-    return inspect_pdf_bytes(pdf_bytes)
+    sb_token, _, _ = _extract_supabase_ctx(request)
+    res = inspect_pdf_bytes(pdf_bytes, user_jwt=sb_token)
+    res["supabase_persisted"] = _persist_inspection(res, "PDF Forensic Inspector", request=request)
+    return res
 
 
 @app.post("/api/issue-lease")
-def issue_lease_endpoint(req: IssueLeaseRequest):
+def issue_lease_endpoint(req: IssueLeaseRequest, request: Request):
     """
     Issues a hardware-bound, RSA-256 signed lease ticket + AES-256-GCM ephemeral
     RAM decryption buffer anchored to time.monotonic().
@@ -951,6 +1464,29 @@ def issue_lease_endpoint(req: IssueLeaseRequest):
     lease_token = f"{payload}|{sig}"
     rsa_jwt, lease_envelope = issue_rsa_lease_jwt(lease)
 
+    sb_token, owner_id, owner_email = _extract_supabase_ctx(request)
+    lease_row = {
+        "lease_id": lease_id,
+        "recipient_id": lease.recipient_id,
+        "device_hwid": lease.device_hwid,
+        "device_fingerprint": lease.device_fingerprint[:24],
+        "duration_seconds": duration,
+        "issued_wall_ts": lease.issued_wall,
+        "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(lease.issued_wall + duration)),
+        "revoked": False,
+        "tamper_detected": False,
+        "ram_wiped": False,
+        "ram_key_preview": lease.get_ram_key_preview(),
+        "rsa_sig_prefix": lease_envelope.get("Signature"),
+        "document_preview": (req.document_text or "")[:240],
+        "ciphertext_preview": f"AES-256-GCM:{base64.b64encode(lease.ciphertext[:24]).decode()}",
+    }
+    if owner_id:
+        lease_row["owner_id"] = owner_id
+    if owner_email:
+        lease_row["owner_email"] = owner_email
+    persisted = supabase_store.upsert_drm_lease(lease_row, user_jwt=sb_token)
+
     return {
         "status": "issued",
         "lease_id": lease_id,
@@ -965,17 +1501,30 @@ def issue_lease_endpoint(req: IssueLeaseRequest):
         "issued_at_wall": lease.issued_wall,
         "duration_seconds": duration,
         "permission_end_timestamp": lease.issued_wall + duration,
+        "supabase_persisted": persisted,
     }
 
 
 @app.post("/api/revoke-lease")
-def revoke_lease_endpoint(req: RevokeLeaseRequest):
+def revoke_lease_endpoint(req: RevokeLeaseRequest, request: Request):
     """
-    Instant Kill-Switch: Immediately zero-fills AES-256-GCM key & plaintext in RAM.
+    Instant Kill-Switch: Immediately zero-fills AES-256-GCM key & plaintext in RAM and Supabase.
     """
     lease_id = req.lease_id
     if not lease_id and req.lease_token and "|" in req.lease_token:
         lease_id = req.lease_token.split("|")[0]
+
+    sb_token, _, _ = _extract_supabase_ctx(request)
+    if lease_id:
+        supabase_store.update_drm_lease(
+            lease_id,
+            {
+                "revoked": True,
+                "ram_wiped": True,
+                "ram_key_preview": "0x00000000...0000 (ZEROED)",
+            },
+            user_jwt=sb_token,
+        )
 
     lease = LEASE_REGISTRY.get(lease_id) if lease_id else None
     if lease:
@@ -999,10 +1548,9 @@ def revoke_lease_endpoint(req: RevokeLeaseRequest):
 
 
 @app.post("/api/challenge-qr-renewal")
-def challenge_qr_renewal_endpoint(req: QrChallengeRequest):
+def challenge_qr_renewal_endpoint(req: QrChallengeRequest, request: Request):
     """
-    Generates an air-gapped cryptographic QR challenge so an offline device
-    can obtain a fresh RSA-256 signed renewal token via an online administrator scan.
+    Generates an air-gapped cryptographic QR challenge and persists it in Supabase.
     """
     challenge_code = f"QR-{secrets.token_hex(4).upper()}"
     nonce = secrets.token_hex(8)
@@ -1015,18 +1563,42 @@ def challenge_qr_renewal_endpoint(req: QrChallengeRequest):
         "rsa_alg": "RS256",
     }
     QR_CHALLENGES[challenge_code] = challenge_payload
+    sb_token, owner_id, _ = _extract_supabase_ctx(request)
+    row = {
+        "challenge_code": challenge_code,
+        "recipient_id": req.recipient_id,
+        "device_hwid": req.device_hwid,
+        "requested_window_sec": max(1, int(req.duration_seconds)),
+        "nonce": nonce,
+        "consumed": False,
+        "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 120)),
+    }
+    if owner_id:
+        row["owner_id"] = owner_id
+    persisted = supabase_store.create_qr_challenge(row, user_jwt=sb_token)
     return {
         "status": "challenge_ready",
         "challenge_code": challenge_code,
         "qr_payload": json.dumps(challenge_payload),
         "expires_in_seconds": 120,
+        "supabase_persisted": persisted,
     }
 
 
 @app.post("/api/complete-qr-renewal")
-def complete_qr_renewal_endpoint(req: QrCompleteRequest):
-    """Verifies the offline QR challenge code and issues a fresh Monotonic AES-256-GCM lease."""
+def complete_qr_renewal_endpoint(req: QrCompleteRequest, request: Request):
+    """Verifies the offline QR challenge code (RAM or Supabase) and issues a fresh Monotonic AES-256-GCM lease."""
+    sb_token, _, _ = _extract_supabase_ctx(request)
     challenge = QR_CHALLENGES.pop(req.challenge_code, None)
+    if challenge:
+        supabase_store.consume_qr_challenge(req.challenge_code, user_jwt=sb_token)
+    else:
+        db_challenge = supabase_store.consume_qr_challenge(req.challenge_code, user_jwt=sb_token)
+        if db_challenge:
+            challenge = {
+                "recipient_id": db_challenge["recipient_id"],
+                "device_hwid": db_challenge["device_hwid"],
+            }
     if not challenge:
         raise HTTPException(status_code=400, detail="Invalid or expired QR challenge code.")
 
@@ -1035,19 +1607,21 @@ def complete_qr_renewal_endpoint(req: QrCompleteRequest):
             duration_seconds=req.duration_seconds,
             recipient_id=challenge["recipient_id"],
             device_hwid=challenge["device_hwid"],
-        )
+        ),
+        request=request,
     )
 
 
 @app.post("/api/validate-lease")
-def validate_lease_endpoint(req: LeaseRequest):
+def validate_lease_endpoint(req: LeaseRequest, request: Request):
     """
     Enterprise DRM Validation:
     - Verifies RSA-256 JWT or HMAC lease token
-    - Evaluates MonotonicDRMLease (time.monotonic() delta)
+    - Evaluates MonotonicDRMLease (time.monotonic() delta) and Supabase revocation ledger
     - Detects OS wall-clock rollbacks and immediately zero-fills AES-256-GCM RAM buffers
     """
     current_wall = time.time()
+    sb_token, _, _ = _extract_supabase_ctx(request)
     rsa_verified = False
     rsa_claims = None
 
@@ -1107,6 +1681,11 @@ def validate_lease_endpoint(req: LeaseRequest):
         if lease:
             if req.simulated_clock_offset_seconds < -5.0 or lease.tamper_detected:
                 lease.revoke(tamper=True)
+                supabase_store.update_drm_lease(
+                    lease_id,
+                    {"revoked": True, "tamper_detected": True, "ram_wiped": True, "ram_key_preview": lease.get_ram_key_preview()},
+                    user_jwt=sb_token,
+                )
                 return {
                     "access_allowed": False,
                     "token_verified": True,
@@ -1128,6 +1707,11 @@ def validate_lease_endpoint(req: LeaseRequest):
                 lease.zero_fill_wipe()
                 status["ram_wiped"] = True
                 status["ram_key_preview"] = lease.get_ram_key_preview()
+                supabase_store.update_drm_lease(
+                    lease_id,
+                    {"ram_wiped": True, "ram_key_preview": status["ram_key_preview"]},
+                    user_jwt=sb_token,
+                )
 
             if lease.revoked:
                 msg = "ACCESS REVOKED / RAM KEY ZEROED"
@@ -1154,8 +1738,30 @@ def validate_lease_endpoint(req: LeaseRequest):
                 "status_message": msg,
             }
         else:
+            db_lease = supabase_store.get_drm_lease(lease_id, user_jwt=sb_token)
             effective_elapsed = req.client_elapsed_seconds if req.client_elapsed_seconds is not None else max(0.0, current_wall - float(issued_wall_str))
+            if db_lease and (db_lease.get("revoked") or db_lease.get("tamper_detected") or db_lease.get("ram_wiped")):
+                return {
+                    "access_allowed": False,
+                    "token_verified": True,
+                    "rsa_verified": rsa_verified,
+                    "clock_tamper_detected": bool(db_lease.get("tamper_detected")),
+                    "ram_wiped": True,
+                    "ram_key_preview": db_lease.get("ram_key_preview") or "0x00000000...0000 (ZEROED)",
+                    "decrypted_viewport_text": None,
+                    "device_hwid": db_lease.get("device_hwid"),
+                    "monotonic_elapsed_seconds": round(effective_elapsed, 2),
+                    "remaining_seconds": 0,
+                    "status_message": "ACCESS REVOKED / CLOCK TAMPERING DETECTED"
+                    if db_lease.get("tamper_detected")
+                    else "ACCESS REVOKED / RAM KEY ZEROED",
+                }
             if req.simulated_clock_offset_seconds < -5.0:
+                supabase_store.update_drm_lease(
+                    lease_id,
+                    {"revoked": True, "tamper_detected": True, "ram_wiped": True, "ram_key_preview": "0x00000000...0000 (ZEROED)"},
+                    user_jwt=sb_token,
+                )
                 return {
                     "access_allowed": False,
                     "token_verified": True,
@@ -1217,7 +1823,7 @@ def validate_lease_endpoint(req: LeaseRequest):
 
 
 @app.post("/api/regenerate-demo-copies")
-def regenerate_demo_copies():
+def regenerate_demo_copies(request: Request):
     """Batch endpoint generating visually identical Alice and Bob watermarked copies."""
     base_text = (
         "CONFIDENTIAL INTERNAL MEMO: Project SentinelTrace launch roadmap and "
@@ -1236,6 +1842,9 @@ def regenerate_demo_copies():
         recipient_id="Bob Jones (USR-3104)",
         session_id="SES-SYNAPSE-2026",
     )
+
+    _persist_watermark("Alice Smith (USR-8492)", "SES-SYNAPSE-2026", alice_sig, "stress_demo", alice_chunks, request=request)
+    _persist_watermark("Bob Jones (USR-3104)", "SES-SYNAPSE-2026", bob_sig, "stress_demo", bob_chunks, request=request)
 
     return {
         "status": "success",
@@ -1258,6 +1867,12 @@ def regenerate_demo_copies():
 
 class GoogleAuthRequest(BaseModel):
     token: str
+
+
+class SupabaseAuthRequest(BaseModel):
+    email: str
+    password: str
+    name: Optional[str] = None
 
 
 def create_jwt_token(email: str, name: str, picture: str = "") -> str:
@@ -1311,6 +1926,52 @@ def google_auth_endpoint(req: GoogleAuthRequest, request: Request):
         raise HTTPException(status_code=401, detail=f"Google authentication failed: {str(e)}")
 
 
+@app.post("/api/auth/supabase/signup")
+def supabase_signup_endpoint(req: SupabaseAuthRequest):
+    """Registers an operator account in Supabase Auth and returns a LeakLens session if confirmed."""
+    status_code, data = supabase_store.sign_up_password(req.email.strip(), req.password, req.name or "")
+    if status_code >= 400:
+        msg = data.get("msg") or data.get("error_description") or data.get("message") or "Supabase sign-up failed."
+        raise HTTPException(status_code=status_code, detail=msg)
+    sb_access_token = data.get("access_token")
+    user_obj = data.get("user") or {}
+    email = user_obj.get("email") or req.email.strip()
+    name = (user_obj.get("user_metadata") or {}).get("name") or req.name or email.split("@")[0]
+    if sb_access_token:
+        return {
+            "status": "success",
+            "confirmation_required": False,
+            "access_token": create_jwt_token(email, name),
+            "supabase_access_token": sb_access_token,
+            "user": {"email": email, "name": name, "picture": ""},
+        }
+    return {
+        "status": "pending_confirmation",
+        "confirmation_required": True,
+        "message": f"Verification email sent to {email}. Confirm your inbox then sign in.",
+        "user": {"email": email, "name": name, "picture": ""},
+    }
+
+
+@app.post("/api/auth/supabase/signin")
+def supabase_signin_endpoint(req: SupabaseAuthRequest):
+    """Authenticates via Supabase Auth and returns LeakLens JWT + RLS-scoped Supabase access token."""
+    status_code, data = supabase_store.sign_in_password(req.email.strip(), req.password)
+    if status_code >= 400:
+        msg = data.get("msg") or data.get("error_description") or data.get("message") or "Supabase sign-in failed."
+        raise HTTPException(status_code=status_code, detail=msg)
+    sb_access_token = data.get("access_token")
+    user_obj = data.get("user") or {}
+    email = user_obj.get("email") or req.email.strip()
+    name = (user_obj.get("user_metadata") or {}).get("name") or email.split("@")[0]
+    return {
+        "status": "success",
+        "access_token": create_jwt_token(email, name),
+        "supabase_access_token": sb_access_token,
+        "user": {"email": email, "name": name, "picture": ""},
+    }
+
+
 @app.get("/api/auth/me")
 def get_current_user(authorization: str = Header(None)):
     """Validates active user session from Bearer token."""
@@ -1331,6 +1992,18 @@ def get_current_user(authorization: str = Header(None)):
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
     except jwt.PyJWTError:
+        sb_user = supabase_store.verify_user_jwt(token)
+        if sb_user and sb_user.get("email"):
+            meta = sb_user.get("user_metadata") or {}
+            return {
+                "status": "authenticated",
+                "provider": "supabase",
+                "user": {
+                    "email": sb_user["email"],
+                    "name": meta.get("name") or sb_user["email"].split("@")[0],
+                    "picture": meta.get("avatar_url", ""),
+                },
+            }
         raise HTTPException(status_code=401, detail="Invalid session token.")
 
 

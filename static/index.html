@@ -1557,20 +1557,25 @@
                     <div id="googleAuthBar" style="padding:12px 24px; border-bottom:1px solid var(--border-subtle); background:rgba(6,6,10,0.56); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
                         <div id="authUserSummary" style="display:flex; align-items:center; gap:10px;">
                             <span class="mono-badge gold" id="authBadge">GUEST SESSION</span>
-                            <span id="authPromptCopy" style="font-size:12.5px; color:var(--text-muted);">Sign in with Google to bind your Gmail operator identity and JWT session.</span>
+                            <span id="supabaseSyncBadge" class="mono-badge teal">SUPABASE: CONNECTING</span>
+                            <span id="authPromptCopy" style="font-size:12.5px; color:var(--text-muted);">Sign in with Google or Supabase Auth to persist encrypted traces with RLS.</span>
                         </div>
-                        <div id="authUserProfile" style="display:none; align-items:center; gap:12px;">
+                        <div id="authUserProfile" style="display:none; align-items:center; gap:12px; flex-wrap:wrap;">
                             <img id="authAvatar" src="" alt="Profile" style="width:32px; height:32px; border-radius:50%; border:1.5px solid var(--teal); object-fit:cover;" />
                             <div>
                                 <div id="authName" style="font-size:13px; font-weight:600; color:var(--text-primary); line-height:1.2;"></div>
                                 <div id="authEmail" style="font-family:var(--font-mono); font-size:11px; color:var(--teal);"></div>
                             </div>
                             <span class="mono-badge teal">JWT VERIFIED</span>
+                            <button class="lt-pill sm secondary" onclick="toggleSupabaseAuditPanel()">Supabase Ledger</button>
+                            <button class="lt-pill sm secondary" onclick="toggleSupabaseAuthBox()">Supabase Auth</button>
                             <button class="lt-pill sm secondary" onclick="useAuthedEmailAsRecipient()">Use as Recipient</button>
                             <button class="lt-pill sm danger" onclick="handleLogout()">Log out</button>
                         </div>
                         <div id="authControlsRight" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                             <div id="google-signin-btn"></div>
+                            <button type="button" class="lt-pill sm teal" onclick="toggleSupabaseAuthBox()">Supabase Login</button>
+                            <button type="button" class="lt-pill sm secondary" onclick="toggleSupabaseAuditPanel()">Supabase Ledger</button>
                             <a href="https://linklenslogin.framer.website/" target="_blank" rel="noopener" class="lt-pill sm secondary">Framer Login ↗</a>
                             <button id="authGuardToggleBtn" class="lt-pill sm secondary" onclick="toggleAuthGuard()">Route Guard: OFF</button>
                             <div id="googleClientCfgBox" style="display:none; align-items:center; gap:8px;">
@@ -1579,6 +1584,31 @@
                             </div>
                             <button id="googleClientCfgBtn" class="lt-pill sm secondary" onclick="toggleGoogleClientCfg()">Client ID</button>
                         </div>
+                    </div>
+
+                    <!-- Supabase Auth & Persisted Audit Drawer -->
+                    <div id="supabaseAuthBox" style="display:none; padding:12px 24px; border-bottom:1px solid var(--border-subtle); background:rgba(8,10,16,0.82); align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span class="mono-badge teal">SUPABASE AUTH · supabase-pink-kite</span>
+                            <input id="sbEmailInput" class="glass-input" type="email" placeholder="operator@company.com" style="padding:6px 10px; font-size:12px; width:210px;" />
+                            <input id="sbPasswordInput" class="glass-input" type="password" placeholder="Password (min 6 chars)" style="padding:6px 10px; font-size:12px; width:170px;" />
+                            <button type="button" class="lt-pill sm teal" onclick="handleSupabaseAuth('signin')">Sign In</button>
+                            <button type="button" class="lt-pill sm gold" onclick="handleSupabaseAuth('signup')">Sign Up</button>
+                        </div>
+                        <div id="sbAuthFeedback" style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">
+                            Sign in with Supabase Auth to persist watermark_records, drm_leases &amp; leak_inspections with RLS.
+                        </div>
+                    </div>
+
+                    <div id="supabaseAuditPanel" style="display:none; padding:14px 24px; border-bottom:1px solid var(--border-subtle); background:rgba(6,8,14,0.86); flex-direction:column; gap:10px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="mono-badge teal">POSTGRES PERSISTENCE</span>
+                                <span id="supabaseAuditMeta" style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">Project: fpidtcofamgfyyiwyshy</span>
+                            </div>
+                            <button type="button" class="lt-pill sm secondary" onclick="refreshSupabaseAuditPanel(true)">Refresh Ledger</button>
+                        </div>
+                        <div id="supabaseAuditSummaryGrid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; font-family:var(--font-mono); font-size:11.5px;"></div>
                     </div>
 
                     <!-- ==================== TAB 1: WATERMARK GENERATOR ==================== -->
@@ -2906,16 +2936,27 @@
         }
 
         const FRAMER_LOGIN_URL = 'https://linklenslogin.framer.website/';
-        const CLIENT_ONLY_MODE = true;
+        const SUPABASE_URL = 'https://fpidtcofamgfyyiwyshy.supabase.co';
+        const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_g4OZs168BBOG7KkUOAj1ng_ZCHTXmBY';
+        const CLIENT_ONLY_MODE = false;
 
         async function apiFetch(path, options = {}) {
             if (CLIENT_ONLY_MODE) {
                 return Promise.reject(new Error('client_only'));
             }
-            return fetch(path, options);
+            const headers = new Headers(options.headers || {});
+            const sbToken = localStorage.getItem('supabase_access_token');
+            if (sbToken && !headers.has('X-Supabase-Token')) {
+                headers.set('X-Supabase-Token', sbToken);
+            }
+            const appToken = localStorage.getItem('access_token');
+            if (appToken && !headers.has('Authorization')) {
+                headers.set('Authorization', `Bearer ${appToken}`);
+            }
+            return fetch(path, { ...options, headers });
         }
 
-        const OFFLINE_CONFIDENTIAL_DOCS = [
+        let OFFLINE_CONFIDENTIAL_DOCS = [
             {
                 id: 'helios-brief',
                 label: 'Project Helios M&A',
@@ -3145,13 +3186,133 @@
             renderViewportWatermark();
         }
 
-        // Client-Side Engine Health Badge (Zero External API Calls)
-        (function initClientHealthBadge() {
+        function toggleSupabaseAuthBox() {
+            const box = document.getElementById('supabaseAuthBox');
+            if (!box) return;
+            box.style.display = box.style.display === 'flex' ? 'none' : 'flex';
+        }
+
+        function toggleSupabaseAuditPanel() {
+            const box = document.getElementById('supabaseAuditPanel');
+            if (!box) return;
+            const opening = box.style.display !== 'flex';
+            box.style.display = opening ? 'flex' : 'none';
+            if (opening) refreshSupabaseAuditPanel(true);
+        }
+
+        async function handleSupabaseAuth(mode) {
+            const email = (document.getElementById('sbEmailInput')?.value || '').trim();
+            const password = document.getElementById('sbPasswordInput')?.value || '';
+            const fb = document.getElementById('sbAuthFeedback');
+            if (!email || password.length < 6) {
+                if (fb) { fb.style.color = '#FF8DA1'; fb.textContent = 'Enter a valid email and password (min 6 characters).'; }
+                return;
+            }
+            if (fb) { fb.style.color = 'var(--text-muted)'; fb.textContent = 'Connecting to Supabase Auth...'; }
+            try {
+                const resp = await fetch(`/api/auth/supabase/${mode}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    if (fb) { fb.style.color = '#FF8DA1'; fb.textContent = data.detail || 'Authentication error.'; }
+                    return;
+                }
+                if (data.confirmation_required) {
+                    if (fb) { fb.style.color = 'var(--gold)'; fb.textContent = data.message || 'Check your email to confirm account, then Sign In.'; }
+                    return;
+                }
+                if (data.supabase_access_token) localStorage.setItem('supabase_access_token', data.supabase_access_token);
+                if (data.access_token) localStorage.setItem('access_token', data.access_token);
+                if (data.user?.email) localStorage.setItem('user_email', data.user.email);
+                if (data.user?.name) localStorage.setItem('user_name', data.user.name);
+                if (fb) { fb.style.color = 'var(--teal)'; fb.textContent = `Authenticated via Supabase Auth (${email}). RLS persistence active.`; }
+                unlockMainWebsiteView(data.user || { email, name: email.split('@')[0] });
+                refreshSupabaseAuditPanel(false);
+            } catch {
+                if (fb) { fb.style.color = '#FF8DA1'; fb.textContent = 'Could not reach backend Supabase Auth proxy.'; }
+            }
+        }
+
+        async function refreshSupabaseAuditPanel(force) {
+            const panel = document.getElementById('supabaseAuditPanel');
+            const grid = document.getElementById('supabaseAuditSummaryGrid');
+            const meta = document.getElementById('supabaseAuditMeta');
+            if (!grid || (!force && panel && panel.style.display === 'none')) return;
+            try {
+                const resp = await apiFetch('/api/supabase/records');
+                if (!resp.ok) throw new Error('offline');
+                const data = await resp.json();
+                if (meta) {
+                    meta.textContent = `Project: ${data.project_ref || 'fpidtcofamgfyyiwyshy'} • Mode: ${data.auth_mode || 'connected'} • Writable: ${data.writable ? 'YES' : 'SIGN IN FOR RLS WRITE'}`;
+                }
+                const wmCount = (data.watermarks || []).length;
+                const leaseCount = (data.leases || []).length;
+                const inspCount = (data.inspections || []).length;
+                const latestWm = data.watermarks?.[0];
+                const latestLease = data.leases?.[0];
+                const latestInsp = data.inspections?.[0];
+                grid.innerHTML = `
+                    <div class="metric-kv">
+                        <div class="k">WATERMARK_RECORDS (${wmCount})</div>
+                        <div class="v">${latestWm ? `${latestWm.recipient_id} [${latestWm.signature}]` : 'No persisted rows yet'}</div>
+                    </div>
+                    <div class="metric-kv">
+                        <div class="k">DRM_LEASES (${leaseCount})</div>
+                        <div class="v">${latestLease ? `${latestLease.lease_id} • ${latestLease.revoked ? 'REVOKED' : `${latestLease.duration_seconds}s`}` : 'No persisted rows yet'}</div>
+                    </div>
+                    <div class="metric-kv">
+                        <div class="k">LEAK_INSPECTIONS (${inspCount})</div>
+                        <div class="v">${latestInsp ? `${latestInsp.match_found ? `MATCH: ${latestInsp.recipient_id}` : 'CLEAN / NO MATCH'}` : 'No persisted rows yet'}</div>
+                    </div>
+                `;
+            } catch {
+                if (meta) meta.textContent = 'Offline vault cache active — Supabase ledger unavailable.';
+            }
+        }
+
+        // Live Backend & Supabase Sync Initialization (with offline resilience)
+        (async function initBackendAndSupabaseSync() {
             const badge = document.getElementById('apiHealthBadge');
-            if (badge) {
-                badge.style.borderColor = 'rgba(43,216,200,0.35)';
-                badge.style.color = '#2BD8C8';
-                badge.innerHTML = `<span class="status-dot"></span><span>CLIENT VAULT READY</span>`;
+            const sbBadge = document.getElementById('supabaseSyncBadge');
+            try {
+                const [healthResp, docsResp] = await Promise.all([
+                    apiFetch('/api/health'),
+                    apiFetch('/api/documents').catch(() => null),
+                ]);
+                if (!healthResp.ok) throw new Error('offline');
+                const health = await healthResp.json();
+                if (badge) {
+                    badge.style.borderColor = 'rgba(43,216,200,0.35)';
+                    badge.style.color = '#2BD8C8';
+                    badge.innerHTML = `<span class="status-dot"></span><span>${health?.supabase?.connected ? 'FASTAPI + SUPABASE LIVE' : 'FASTAPI ENGINE LIVE'}</span>`;
+                }
+                if (sbBadge && health?.supabase) {
+                    sbBadge.textContent = `SUPABASE: ${health.supabase.project_ref}`;
+                    sbBadge.className = health.supabase.connected ? 'mono-badge teal' : 'mono-badge gold';
+                }
+                if (docsResp && docsResp.ok) {
+                    const docPayload = await docsResp.json();
+                    if (Array.isArray(docPayload.documents) && docPayload.documents.length > 0) {
+                        OFFLINE_CONFIDENTIAL_DOCS = docPayload.documents.map((d) => ({
+                            id: d.slug,
+                            label: d.title.split(' — ')[0],
+                            text: d.content,
+                        }));
+                    }
+                }
+            } catch {
+                if (badge) {
+                    badge.style.borderColor = 'rgba(255,182,39,0.4)';
+                    badge.style.color = '#FFB627';
+                    badge.innerHTML = `<span class="status-dot" style="background:#FFB627;"></span><span>OFFLINE VAULT READY</span>`;
+                }
+                if (sbBadge) {
+                    sbBadge.textContent = 'SUPABASE: OFFLINE CACHE';
+                    sbBadge.className = 'mono-badge gold';
+                }
             }
         })();
 
@@ -3227,10 +3388,11 @@
             }
             document.getElementById('wmOutput').value = data.watermarked_text;
             const badge = document.getElementById('wmBadge');
-            badge.textContent = `SIGNED · ${data.chunks_embedded || 1} CHUNKS`;
+            badge.textContent = `SIGNED · ${data.chunks_embedded || 1} CHUNKS${data.supabase_persisted ? ' · DB' : ''}`;
             badge.className = 'mono-badge teal';
             document.getElementById('wmInfo').textContent =
-                `HMAC-SHA256 Signature [${data.signature}] embedded redundantly across ${data.chunks_embedded} sentence boundary checkpoints (0 visible pixels added).`;
+                `HMAC-SHA256 Signature [${data.signature}] embedded redundantly across ${data.chunks_embedded} sentence boundary checkpoints${data.supabase_persisted ? ' & logged to Supabase' : ''}.`;
+            refreshSupabaseAuditPanel(false);
         }
 
         function handlePdfDragOver(e) { e.preventDefault(); document.getElementById('pdfDropZone').classList.add('dragover'); }
@@ -3387,6 +3549,7 @@
                 if (!resp.ok) throw new Error('offline');
                 const data = await resp.json();
                 renderInspectionResult(data);
+                refreshSupabaseAuditPanel(false);
             } catch {
                 renderInspectionResult(offlineDecodeWatermark(leaked));
             }
@@ -3546,6 +3709,7 @@
                 document.getElementById('resRsaSig').textContent = `RS256 JWT: ${(data.rsa_jwt || '').slice(0, 72)}...`;
                 renderViewportWatermark();
                 validateLeaseNow();
+                refreshSupabaseAuditPanel(false);
             } catch {
                 activeLeaseId = 'OFFLINE-LEASE';
                 activeLeaseToken = `offline|${Math.floor(Date.now() / 1000)}|${durationSeconds}|cached`;
@@ -3556,6 +3720,7 @@
                 document.getElementById('resRsaSig').textContent = 'OFFLINE CLIENT CACHE ACTIVE (MONOTONIC CLOCK)';
                 renderViewportWatermark();
                 validateLeaseNow();
+                refreshSupabaseAuditPanel(false);
             }
         }
 
@@ -4078,7 +4243,23 @@
                 return;
             }
 
-            // C. Pure client-side session decode & immediate unlock (zero external API fetch calls)
+            // C. Verify session against FastAPI / Supabase Auth with graceful offline JWT fallback
+            if (token && token !== 'demo_client_token' && token.includes('.')) {
+                try {
+                    const meResp = await apiFetch('/api/auth/me');
+                    if (meResp.ok) {
+                        const meData = await meResp.json();
+                        if (meData?.user?.email) {
+                            localStorage.setItem('user_email', meData.user.email);
+                            localStorage.setItem('user_name', meData.user.name || meData.user.email);
+                            const wmRec = document.getElementById('wmRecipient');
+                            if (wmRec) wmRec.value = meData.user.email;
+                            unlockMainWebsiteView(meData.user);
+                            return;
+                        }
+                    }
+                } catch {}
+            }
             const offlineDecoded = decodeJwtOffline(token);
             if (offlineDecoded?.expired) {
                 localStorage.clear();
