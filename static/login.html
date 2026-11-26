@@ -3,26 +3,13 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LeakLens — Login (Framer + Firebase Auth)</title>
+    <title>LeakLens — Login</title>
     <meta name="theme-color" content="#000000" />
     <link rel="icon" type="image/png" href="/icons/icon-192x192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600&display=swap" rel="stylesheet" />
     <style>
-        :root {
-            --bg: #000000;
-            --surface: rgba(10, 10, 16, 0.84);
-            --border: rgba(243, 242, 248, 0.16);
-            --text: #F3F2F8;
-            --muted: rgba(243, 242, 248, 0.65);
-            --teal: #2BD8C8;
-            --violet: #575AFF;
-            --gold: #FFB627;
-            --danger: #FF6B84;
-            --mono: 'JetBrains Mono', monospace;
-            --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        }
         * { box-sizing: border-box; }
         html, body {
             margin: 0;
@@ -30,8 +17,7 @@
             width: 100%;
             height: 100%;
             background: #000000;
-            color: var(--text);
-            font-family: var(--sans);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: hidden;
         }
         #framerLoginFrame {
@@ -43,207 +29,83 @@
             background: #000000;
             z-index: 1;
         }
-        .firebase-dock {
+        /* Covers Framer's button slot directly under "Your next step starts here..." */
+        .google-slot {
             position: fixed;
-            left: 50%;
-            bottom: 22px;
-            transform: translateX(-50%);
+            top: 438px;
+            right: 88px;
+            width: 312px;
+            min-height: 124px;
+            padding-top: 10px;
+            background: #000000;
             z-index: 30;
-            width: min(94vw, 540px);
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 14px 18px;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.85), 0 0 42px rgba(87, 90, 255, 0.25);
             display: flex;
             flex-direction: column;
-            gap: 10px;
-        }
-        .dock-top {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .dock-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-family: var(--mono);
-            font-size: 10.5px;
-            padding: 4px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(43, 216, 200, 0.35);
-            color: var(--teal);
-            background: rgba(43, 216, 200, 0.08);
-        }
-        .dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--teal);
+            align-items: flex-start;
         }
         .google-btn {
-            flex: 1;
-            min-width: 220px;
+            width: 100%;
+            height: 44px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            padding: 11px 16px;
+            padding: 0 18px;
             border-radius: 999px;
             border: 1px solid rgba(255, 255, 255, 0.22);
             background: #FFFFFF;
             color: #11131A;
-            font-size: 13.5px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.15s ease, box-shadow 0.15s ease;
         }
         .google-btn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 10px 26px rgba(87, 90, 255, 0.35);
+            box-shadow: 0 10px 28px rgba(87, 90, 255, 0.36);
         }
         .google-btn:disabled {
-            opacity: 0.65;
+            opacity: 0.7;
             cursor: not-allowed;
+            transform: none;
         }
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 9px 14px;
-            border-radius: 999px;
-            border: 1px solid var(--border);
-            background: rgba(255, 255, 255, 0.06);
-            color: var(--text);
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-        }
-        .btn.teal {
-            background: rgba(43, 216, 200, 0.16);
-            border-color: rgba(43, 216, 200, 0.45);
-            color: #9FF6EE;
-        }
-        .btn.violet {
-            background: var(--violet);
-            border-color: transparent;
-            color: #FFFFFF;
-        }
-        .email-drawer {
+        .auth-error {
             display: none;
-            flex-direction: column;
-            gap: 8px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(243, 242, 248, 0.1);
-        }
-        .email-drawer.open {
-            display: flex;
-        }
-        .email-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-        @media (max-width: 520px) {
-            .email-row { grid-template-columns: 1fr; }
-        }
-        input {
-            width: 100%;
-            padding: 9px 12px;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            background: rgba(6, 6, 10, 0.8);
-            color: var(--text);
-            font-size: 13px;
-            outline: none;
-        }
-        input:focus { border-color: var(--teal); }
-        .status-msg {
-            font-family: var(--mono);
-            font-size: 11px;
-            color: var(--muted);
+            margin-top: 8px;
+            font-size: 12px;
+            color: #FF6B84;
             line-height: 1.4;
-            word-break: break-word;
         }
-        .existing-row {
-            display: none;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            flex-wrap: wrap;
-            padding: 8px 12px;
-            border-radius: 12px;
-            background: rgba(43, 216, 200, 0.1);
-            border: 1px solid rgba(43, 216, 200, 0.35);
-            font-size: 12px;
+        @media (max-width: 720px) {
+            .google-slot {
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%);
+                width: min(88vw, 312px);
+            }
         }
     </style>
 </head>
 <body>
-    <!-- Full-Screen Animated Framer Login Page -->
     <iframe
         id="framerLoginFrame"
-        title="LeakLens Framer Login"
+        title="LeakLens Login"
         src="https://linklenslogin.framer.website/"
         allow="identity-credentials-get; clipboard-read; clipboard-write"
     ></iframe>
 
-    <!-- Floating Firebase Google Authentication Dock -->
-    <aside class="firebase-dock" aria-label="Firebase Google Authentication">
-        <div class="dock-top">
-            <span class="badge"><span class="dot"></span>FIREBASE GOOGLE AUTH · leaklens-77637</span>
-            <div style="display:flex; gap:6px; align-items:center;">
-                <button type="button" id="toggleEmailBtn" class="btn" style="padding:5px 10px; font-size:11px;">Email Login</button>
-                <a href="https://linklenslogin.framer.website/" target="_blank" rel="noopener" class="btn" style="padding:5px 10px; font-size:11px;">Framer ↗</a>
-            </div>
-        </div>
-
-        <div id="existingSessionBox" class="existing-row">
-            <span>Signed in as <strong id="existingEmail" style="color:#9FF6EE;"></strong></span>
-            <div style="display:flex; gap:6px;">
-                <button type="button" id="continueExistingBtn" class="btn teal" style="padding:6px 12px;">Open Website →</button>
-                <button type="button" id="switchAccountBtn" class="btn" style="padding:6px 10px;">Switch</button>
-            </div>
-        </div>
-
-        <div class="dock-actions">
-            <button type="button" id="googleSignInBtn" class="google-btn">
-                <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
-                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"/>
-                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"/>
-                    <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"/>
-                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"/>
-                </svg>
-                <span>Sign in with Google (Firebase)</span>
-            </button>
-        </div>
-
-        <form id="emailAuthForm" class="email-drawer">
-            <div class="email-row">
-                <input id="fbEmail" type="email" required placeholder="operator@company.com" autocomplete="email" />
-                <input id="fbPassword" type="password" required minlength="6" placeholder="Password (min 6 chars)" autocomplete="current-password" />
-            </div>
-            <div style="display:flex; gap:8px;">
-                <button type="submit" id="emailSignInBtn" class="btn teal" style="flex:1;">Sign In</button>
-                <button type="button" id="emailSignUpBtn" class="btn violet" style="flex:1;">Create Account</button>
-            </div>
-        </form>
-
-        <div id="authStatus" class="status-msg">Authenticate via Firebase Google Auth to open LeakLens.</div>
-    </aside>
+    <div class="google-slot">
+        <button type="button" id="googleSignInBtn" class="google-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"/>
+                <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"/>
+            </svg>
+            <span>Sign in with Google</span>
+        </button>
+        <div id="authError" class="auth-error"></div>
+    </div>
 
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js';
@@ -253,9 +115,6 @@
             signInWithPopup,
             signInWithRedirect,
             getRedirectResult,
-            signInWithEmailAndPassword,
-            createUserWithEmailAndPassword,
-            onAuthStateChanged,
             signOut
         } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js';
 
@@ -299,49 +158,27 @@
         const framerFrame = document.getElementById('framerLoginFrame');
         if (framerFrame) {
             framerFrame.src = `${FRAMER_LOGIN_URL}?redirect=${encodeURIComponent(getSafeRedirectTarget())}`;
-            framerFrame.addEventListener('load', () => {
-                try {
-                    const frameLoc = framerFrame.contentWindow?.location;
-                    if (frameLoc && frameLoc.origin === window.location.origin) {
-                        const fParams = new URLSearchParams(frameLoc.search);
-                        const fToken = fParams.get('token');
-                        const fEmail = fParams.get('email');
-                        if (fToken) {
-                            localStorage.setItem('access_token', fToken);
-                            if (fEmail) localStorage.setItem('user_email', fEmail);
-                            window.location.replace(getSafeRedirectTarget());
-                        }
-                    }
-                } catch {}
-            });
         }
-
-        window.addEventListener('message', (event) => {
-            const data = event?.data;
-            if (data && data.type === 'leaklens:auth-success' && data.token) {
-                localStorage.setItem('access_token', data.token);
-                if (data.user?.email) localStorage.setItem('user_email', data.user.email);
-                if (data.user?.name) localStorage.setItem('user_name', data.user.name);
-                if (data.user?.picture) localStorage.setItem('user_picture', data.user.picture);
-                window.location.replace(getSafeRedirectTarget());
-            }
-        });
 
         function resolveBackendUrl(path) {
             if (window.location.hostname.endsWith('.vercel.app')) return path;
             return `${CLOUD_BACKEND_ORIGIN}${path}`;
         }
 
-        function setStatus(msg, color) {
-            const el = document.getElementById('authStatus');
+        function showError(msg) {
+            const el = document.getElementById('authError');
             if (!el) return;
-            el.style.color = color || 'var(--muted)';
+            if (!msg) {
+                el.style.display = 'none';
+                el.textContent = '';
+                return;
+            }
+            el.style.display = 'block';
             el.textContent = msg;
         }
 
         async function completeFirebaseSession(firebaseUser) {
             if (!firebaseUser) return;
-            setStatus(`Verified ${firebaseUser.email}. Opening LeakLens...`, 'var(--teal)');
             const idToken = await firebaseUser.getIdToken(true);
             let sessionToken = idToken;
             const userProfile = {
@@ -363,9 +200,7 @@
                     if (data?.user?.name) userProfile.name = data.user.name;
                     if (data?.user?.picture) userProfile.picture = data.user.picture;
                 }
-            } catch {
-                // Keep verified Firebase ID token as session token
-            }
+            } catch {}
 
             localStorage.setItem('firebase_id_token', idToken);
             localStorage.setItem('access_token', sessionToken);
@@ -383,8 +218,8 @@
 
         async function handleGoogleLogin() {
             const btn = document.getElementById('googleSignInBtn');
+            showError('');
             if (btn) btn.disabled = true;
-            setStatus('Opening Google Sign-In via Firebase...', 'var(--muted)');
             try {
                 const result = await signInWithPopup(auth, googleProvider);
                 await completeFirebaseSession(result.user);
@@ -394,52 +229,19 @@
                     code === 'auth/popup-blocked' ||
                     code === 'auth/operation-not-supported-in-this-environment'
                 ) {
-                    setStatus('Popup blocked — redirecting to Google Sign-In...', 'var(--gold)');
                     await signInWithRedirect(auth, googleProvider);
                     return;
                 }
                 if (code === 'auth/unauthorized-domain') {
-                    setStatus(
-                        `Domain ${window.location.hostname} is not authorized in Firebase Console -> Authentication -> Settings -> Authorized domains.`,
-                        'var(--danger)'
-                    );
+                    showError(`Authorize "${window.location.hostname}" in Firebase Console -> Authentication -> Settings -> Authorized domains.`);
                 } else if (code !== 'auth/popup-closed-by-user') {
-                    setStatus(err?.message || 'Google authentication failed.', 'var(--danger)');
-                } else {
-                    setStatus('Sign-in cancelled.', 'var(--muted)');
+                    showError(err?.message || 'Google sign-in failed.');
                 }
                 if (btn) btn.disabled = false;
             }
         }
 
-        async function handleEmailAuth(mode) {
-            const email = (document.getElementById('fbEmail')?.value || '').trim();
-            const password = document.getElementById('fbPassword')?.value || '';
-            if (!email || password.length < 6) {
-                setStatus('Enter a valid email and password (min 6 characters).', 'var(--danger)');
-                return;
-            }
-            setStatus(mode === 'signup' ? 'Creating Firebase account...' : 'Signing in via Firebase...', 'var(--muted)');
-            try {
-                const cred =
-                    mode === 'signup'
-                        ? await createUserWithEmailAndPassword(auth, email, password)
-                        : await signInWithEmailAndPassword(auth, email, password);
-                await completeFirebaseSession(cred.user);
-            } catch (err) {
-                setStatus(err?.message || 'Firebase authentication failed.', 'var(--danger)');
-            }
-        }
-
-        document.getElementById('toggleEmailBtn')?.addEventListener('click', () => {
-            document.getElementById('emailAuthForm')?.classList.toggle('open');
-        });
         document.getElementById('googleSignInBtn')?.addEventListener('click', handleGoogleLogin);
-        document.getElementById('emailAuthForm')?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            handleEmailAuth('signin');
-        });
-        document.getElementById('emailSignUpBtn')?.addEventListener('click', () => handleEmailAuth('signup'));
 
         (async function bootstrapAuth() {
             const hash = window.location.hash || '';
@@ -457,7 +259,6 @@
                 try {
                     window.history.replaceState({}, document.title, window.location.pathname);
                 } catch {}
-                setStatus('Signed out cleanly. Sign in with Google below.', 'var(--muted)');
                 return;
             }
 
@@ -465,26 +266,10 @@
                 const redirectResult = await getRedirectResult(auth);
                 if (redirectResult?.user) {
                     await completeFirebaseSession(redirectResult.user);
-                    return;
                 }
             } catch (err) {
-                setStatus(err?.message || 'Google redirect sign-in failed.', 'var(--danger)');
+                showError(err?.message || 'Google sign-in failed.');
             }
-
-            onAuthStateChanged(auth, (currentUser) => {
-                const box = document.getElementById('existingSessionBox');
-                const emailEl = document.getElementById('existingEmail');
-                if (currentUser && box && emailEl) {
-                    emailEl.textContent = currentUser.email || currentUser.displayName || 'Authenticated User';
-                    box.style.display = 'flex';
-                    document.getElementById('continueExistingBtn').onclick = () => completeFirebaseSession(currentUser);
-                    document.getElementById('switchAccountBtn').onclick = async () => {
-                        await signOut(auth);
-                        box.style.display = 'none';
-                        setStatus('Signed out. Choose an account below.', 'var(--muted)');
-                    };
-                }
-            });
         })();
     </script>
 </body>
