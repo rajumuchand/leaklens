@@ -1250,6 +1250,7 @@ class QrCompleteRequest(BaseModel):
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 STATIC_INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
+STATIC_LOGIN_PATH = os.path.join(STATIC_DIR, "login.html")
 STATIC_MANIFEST_PATH = os.path.join(STATIC_DIR, "manifest.json")
 STATIC_SW_PATH = os.path.join(STATIC_DIR, "sw.js")
 STATIC_ICONS_DIR = os.path.join(STATIC_DIR, "icons")
@@ -1326,6 +1327,17 @@ def demo_page():
     if os.path.exists(STATIC_INDEX_PATH):
         return FileResponse(STATIC_INDEX_PATH)
     return HTMLResponse("<h1>Demo page not found.</h1>", status_code=404)
+
+
+@app.get("/login")
+def login_page():
+    if os.path.exists(STATIC_LOGIN_PATH):
+        return FileResponse(
+            STATIC_LOGIN_PATH,
+            media_type="text/html",
+            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+        )
+    return HTMLResponse("<h1>Login page not found.</h1>", status_code=404)
 
 
 @app.get("/api/health")

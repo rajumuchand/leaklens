@@ -1385,6 +1385,7 @@
             </nav>
 
             <div class="nav-mobile-actions">
+                <a href="/login" id="navLoginBtn" class="lt-pill sm teal" style="height:36px; text-decoration:none;">Login</a>
                 <button type="button" id="installNavBtn" class="lt-pill sm teal" onclick="triggerPwaInstall()" style="height:36px;">+ Install App</button>
                 <button type="button" id="navLogoutBtn" class="lt-pill sm danger" onclick="handleLogout()" style="height:36px; display:none;">Logout</button>
             </div>
@@ -4034,6 +4035,7 @@
             if (mainView) mainView.style.display = 'block';
 
             const navEmail = document.getElementById('navUserEmail');
+            const navLogin = document.getElementById('navLoginBtn');
             const navLogout = document.getElementById('navLogoutBtn');
 
             if (user && user.email) {
@@ -4043,6 +4045,7 @@
                     navEmail.textContent = user.email;
                     navEmail.style.display = 'inline-flex';
                 }
+                if (navLogin) navLogin.style.display = 'none';
                 if (navLogout) navLogout.style.display = 'inline-flex';
             } else {
                 authedUser = null;
@@ -4051,6 +4054,7 @@
                     navEmail.textContent = '';
                     navEmail.style.display = 'none';
                 }
+                if (navLogin) navLogin.style.display = 'inline-flex';
                 if (navLogout) navLogout.style.display = 'none';
                 initGoogleIdentity();
             }
@@ -4197,6 +4201,7 @@
             if (handoffToken) {
                 token = handoffToken;
                 localStorage.setItem('access_token', token);
+                if (hashMatch) localStorage.setItem('supabase_access_token', token);
                 if (emailFromUrl) localStorage.setItem('user_email', emailFromUrl);
                 try {
                     window.history.replaceState({}, document.title, window.location.pathname);
