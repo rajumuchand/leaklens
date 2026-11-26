@@ -3551,6 +3551,37 @@
             }
         }
 
+        function decodeUtf16StegoPayload(stegoText) {
+            const zwChars = [];
+            for (const ch of String(stegoText || '')) {
+                if (ch === '\u200B' || ch === '\u200C' || ch === '\u200D') zwChars.push(ch);
+            }
+            if (!zwChars.length) return null;
+            if (zwChars[zwChars.length - 1] === '\u200D') zwChars.pop();
+            const bits = zwChars.map((c) => (c === '\u200B' ? '0' : '1')).join('');
+            const chars = [];
+            for (let i = 0; i + 16 <= bits.length; i += 16) {
+                chars.push(String.fromCharCode(parseInt(bits.slice(i, i + 16), 2)));
+            }
+            const payload = chars.join('');
+            const sepIdx = payload.indexOf(':');
+            if (sepIdx <= 0) return null;
+            const userId = payload.slice(0, sepIdx);
+            const timestamp = payload.slice(sepIdx + 1);
+            if (!userId || !timestamp) return null;
+            return {
+                match_found: true,
+                verified: true,
+                recipient_id: userId,
+                session_id: timestamp,
+                signature: 'UTF16-ZW-STEGO',
+                recovery_mode: 'ZERO-WIDTH UTF-16',
+                source: 'Zero-Width Unicode (\\u200B/\\u200C/\\u200D)',
+                chunks_detected: 1,
+                chunks_verified: 1
+            };
+        }
+
         async function runInspector() {
             const leaked = document.getElementById('inspectInput').value;
             if (!leaked.trim()) { alert('Paste text to inspect.'); return; }
@@ -3562,10 +3593,19 @@
                 });
                 if (!resp.ok) throw new Error('offline');
                 const data = await resp.json();
+                if (!data.match_found) {
+                    const stegoMatch = decodeUtf16StegoPayload(leaked);
+                    if (stegoMatch) {
+                        renderInspectionResult(stegoMatch);
+                        refreshSupabaseAuditPanel(false);
+                        return;
+                    }
+                }
                 renderInspectionResult(data);
                 refreshSupabaseAuditPanel(false);
             } catch {
-                renderInspectionResult(offlineDecodeWatermark(leaked));
+                const fallback = offlineDecodeWatermark(leaked);
+                renderInspectionResult(fallback.match_found ? fallback : (decodeUtf16StegoPayload(leaked) || fallback));
             }
         }
 
@@ -3670,7 +3710,9 @@
 
         function renderViewportWatermark() {
             const userIdentity = authedUser?.email || localStorage.getItem('user_email') || 'security_user@leaklens.io';
-            const stamp = `CONFIDENTIAL • ACCESSED BY ${userIdentity} • SESSION ACTIVE`;
+            const activeSessionId = (document.getElementById('drmLeaseIdBadge')?.textContent || 'SESSION ACTIVE').trim();
+            const timestamp = new Date().toISOString();
+            const stamp = `CONFIDENTIAL • ${userIdentity} • ${timestamp} • ${activeSessionId}`;
             const grid = document.getElementById('viewportWatermarkGrid');
             if (grid) {
                 let html = '';
