@@ -1229,7 +1229,11 @@ class QrCompleteRequest(BaseModel):
 
 # --- API Routes ---
 
-STATIC_INDEX_PATH = os.path.join(os.path.dirname(__file__), "static", "index.html")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+STATIC_INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
+STATIC_MANIFEST_PATH = os.path.join(STATIC_DIR, "manifest.json")
+STATIC_SW_PATH = os.path.join(STATIC_DIR, "sw.js")
+STATIC_ICONS_DIR = os.path.join(STATIC_DIR, "icons")
 
 
 @app.get("/")
@@ -1244,6 +1248,58 @@ def root(request: Request):
         "version": "3.0.0",
         "scheme": _get_forwarded_proto(request),
     }
+
+
+@app.get("/index.html")
+def serve_index_html():
+    if os.path.exists(STATIC_INDEX_PATH):
+        return FileResponse(
+            STATIC_INDEX_PATH,
+            media_type="text/html",
+            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+        )
+    return HTMLResponse("<h1>Index not found.</h1>", status_code=404)
+
+
+@app.get("/manifest.json")
+def serve_manifest():
+    if os.path.exists(STATIC_MANIFEST_PATH):
+        return FileResponse(
+            STATIC_MANIFEST_PATH,
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+        )
+    raise HTTPException(status_code=404, detail="Manifest not found.")
+
+
+@app.get("/sw.js")
+def serve_service_worker():
+    if os.path.exists(STATIC_SW_PATH):
+        return FileResponse(
+            STATIC_SW_PATH,
+            media_type="application/javascript",
+            headers={
+                "Cache-Control": "public, max-age=0, must-revalidate",
+                "Service-Worker-Allowed": "/",
+            },
+        )
+    raise HTTPException(status_code=404, detail="Service worker not found.")
+
+
+@app.get("/icons/{icon_name}")
+def serve_pwa_icon(icon_name: str):
+    allowed = {"apple-touch-icon.png", "icon-192x192.png", "icon-512x512.png"}
+    safe_name = os.path.basename(icon_name)
+    if safe_name not in allowed:
+        raise HTTPException(status_code=404, detail="Icon not found.")
+    icon_path = os.path.join(STATIC_ICONS_DIR, safe_name)
+    if not os.path.exists(icon_path):
+        raise HTTPException(status_code=404, detail="Icon not found.")
+    return FileResponse(
+        icon_path,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @app.get("/demo")
