@@ -1,0 +1,48 @@
+name: LeakLens 24x7 Cloud & Supabase Keepalive
+
+on:
+  schedule:
+    # Runs every 6 hours 24/7 on GitHub Cloud runners (independent of local machine)
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Vercel FastAPI + Supabase Health
+        run: |
+          set -euo pipefail
+          HEALTH=$(curl -fsS --retry 3 "https://leaklens-omega.vercel.app/api/health")
+          echo "Health response: $HEALTH"
+          echo "$HEALTH" | grep -q '"connected":true'
+
+      - name: Verify Confidential Documents Endpoint
+        run: |
+          set -euo pipefail
+          DOCS=$(curl -fsS --retry 3 "https://leaklens-omega.vercel.app/api/documents")
+          echo "$DOCS" | grep -q 'helios-brief'
+
+      - name: Direct Supabase Data API Heartbeat
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 3 \
+            "https://fpidtcofamgfyyiwyshy.supabase.co/rest/v1/confidential_documents?select=slug&limit=1" \
+            -H "apikey: sb_publishable_g4OZs168BBOG7KkUOAj1ng_ZCHTXmBY" \
+            | grep -q 'helios-brief'
+
+      - name: Ping Supabase 24/7 Edge Function
+        env:
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANON_KEY" ]; then
+            echo "SUPABASE_ANON_KEY secret not set; skipping authenticated edge ping."
+            exit 0
+          fi
+          curl -fsS --retry 3 \
+            "https://fpidtcofamgfyyiwyshy.supabase.co/functions/v1/leaklens-engine" \
+            -H "Authorization: Bearer $ANON_KEY" \
+            -H "apikey: $ANON_KEY" \
+            | grep -q '"status":"online"'

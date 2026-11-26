@@ -3009,7 +3009,15 @@
         const FRAMER_LOGIN_URL = 'https://linklenslogin.framer.website/';
         const SUPABASE_URL = 'https://fpidtcofamgfyyiwyshy.supabase.co';
         const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_g4OZs168BBOG7KkUOAj1ng_ZCHTXmBY';
+        const CLOUD_BACKEND_ORIGIN = 'https://leaklens-omega.vercel.app';
         const CLIENT_ONLY_MODE = false;
+
+        function resolveApiUrl(path) {
+            if (!path.startsWith('/')) return path;
+            const host = window.location.hostname || '';
+            const isSameOriginHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.vercel.app');
+            return isSameOriginHost ? path : `${CLOUD_BACKEND_ORIGIN}${path}`;
+        }
 
         async function apiFetch(path, options = {}) {
             if (CLIENT_ONLY_MODE) {
@@ -3024,7 +3032,7 @@
             if (appToken && !headers.has('Authorization')) {
                 headers.set('Authorization', `Bearer ${appToken}`);
             }
-            return fetch(path, { ...options, headers });
+            return fetch(resolveApiUrl(path), { ...options, headers });
         }
 
         let OFFLINE_CONFIDENTIAL_DOCS = [
@@ -3281,7 +3289,7 @@
             }
             if (fb) { fb.style.color = 'var(--text-muted)'; fb.textContent = 'Connecting to Supabase Auth...'; }
             try {
-                const resp = await fetch(`/api/auth/supabase/${mode}`, {
+                const resp = await fetch(resolveApiUrl(`/api/auth/supabase/${mode}`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
@@ -3422,7 +3430,7 @@
                 if (badge) {
                     badge.style.borderColor = 'rgba(43,216,200,0.35)';
                     badge.style.color = '#2BD8C8';
-                    badge.innerHTML = `<span class="status-dot"></span><span>${health?.supabase?.connected ? 'FASTAPI + SUPABASE LIVE' : 'FASTAPI ENGINE LIVE'}</span>`;
+                    badge.innerHTML = `<span class="status-dot"></span><span>${health?.supabase?.connected ? '24/7 CLOUD + SUPABASE LIVE' : '24/7 CLOUD ENGINE LIVE'}</span>`;
                 }
                 if (sbBadge && health?.supabase) {
                     sbBadge.textContent = `SUPABASE: ${health.supabase.project_ref}`;

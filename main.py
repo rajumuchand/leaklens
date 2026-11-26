@@ -265,6 +265,25 @@ class SupabaseRestStore:
             pass
         return DEFAULT_CONFIDENTIAL_DOCS
 
+    def fetch_latest_heartbeat(self) -> Optional[dict]:
+        hdrs = self._headers(allow_public=True)
+        if not hdrs:
+            return None
+        try:
+            resp = self.session.get(
+                f"{self.url}/rest/v1/service_heartbeats",
+                headers=hdrs,
+                params={"select": "id,source,status,created_at", "order": "id.desc", "limit": "1"},
+                timeout=4,
+            )
+            if resp.status_code == 200:
+                rows = resp.json()
+                if isinstance(rows, list) and rows:
+                    return rows[0]
+        except Exception:
+            pass
+        return None
+
     def record_watermark(self, row: dict, user_jwt: Optional[str] = None) -> bool:
         hdrs = self._headers(user_jwt=user_jwt)
         if not hdrs:
@@ -1312,18 +1331,22 @@ def demo_page():
 @app.get("/api/health")
 def api_health(request: Request):
     docs = supabase_store.fetch_confidential_documents()
+    heartbeat = supabase_store.fetch_latest_heartbeat()
     return {
         "status": "online",
         "service": "LeakLens Engine",
         "project": "leaklens",
         "version": "3.0.0",
         "scheme": _get_forwarded_proto(request),
+        "uptime_mode": "24x7 Cloud (Vercel + Supabase Edge + pg_cron + GitHub Actions)",
         "supabase": {
             "project_ref": SUPABASE_PROJECT_REF,
             "url": SUPABASE_URL,
+            "edge_function_url": f"{SUPABASE_URL}/functions/v1/leaklens-engine",
             "connected": bool(docs),
             "documents_count": len(docs),
             "service_role_configured": supabase_store.has_service_role,
+            "latest_heartbeat": heartbeat,
         },
     }
 
