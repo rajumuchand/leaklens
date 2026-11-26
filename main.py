@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File, F
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response, StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas as rl_canvas
@@ -1330,14 +1330,15 @@ def demo_page():
 
 
 @app.get("/login")
-def login_page():
-    if os.path.exists(STATIC_LOGIN_PATH):
-        return FileResponse(
-            STATIC_LOGIN_PATH,
-            media_type="text/html",
-            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
-        )
-    return HTMLResponse("<h1>Login page not found.</h1>", status_code=404)
+def login_page(request: Request):
+    proto = _get_forwarded_proto(request)
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "leaklens-tyrn.vercel.app"
+    redirect_target = f"{proto}://{fwd_host}/"
+    from urllib.parse import quote
+    return RedirectResponse(
+        url=f"https://linklenslogin.framer.website/?redirect={quote(redirect_target, safe='')}",
+        status_code=302,
+    )
 
 
 @app.get("/api/health")
