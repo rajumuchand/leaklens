@@ -61,7 +61,10 @@ export function decodeWatermark(stegoText) {
     chars.push(String.fromCharCode(code));
   }
   const payload = chars.join("");
-  const [userId, timestamp] = payload.split(":");
+  const sepIdx = payload.indexOf(":");
+  if (sepIdx <= 0) return null;
+  const userId = payload.slice(0, sepIdx);
+  const timestamp = payload.slice(sepIdx + 1);
   if (!userId || !timestamp) return null;
   return { userId, timestamp };
 }
