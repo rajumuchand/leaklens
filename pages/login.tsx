@@ -1,20 +1,17 @@
-import { GetServerSideProps } from 'next'
+import SupabaseAuth from '@/components/SupabaseAuth';
 
 /**
- * Redirects visitors to the external Framer login page.
- * This page is used as the entry point for Google authentication
- * without requiring any local tunnel.
+ * Login page – shows the Supabase authentication UI.
+ * Previously this page performed a server‑side redirect to an
+ * external Framer login URL, which resulted in a placeholder note
+ * being displayed.  The redirect has been removed so the page now
+ * renders the real login component.
  */
-export const getServerSideProps: GetServerSideProps = async () => {
-  return {
-    redirect: {
-      destination: 'https://linklenslogin.framer.website/',
-      permanent: false,
-    },
-  }
+export default function Login() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', marginTop: '4rem' }}>
+      <SupabaseAuth redirectUrl={typeof window !== 'undefined' ? window.location.origin : ''} />
+    </div>
+  );
 }
 
-export default function Login() {
-  // This component will never be rendered because of the redirect.
-  return null
-}

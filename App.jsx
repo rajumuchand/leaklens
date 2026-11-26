@@ -266,7 +266,7 @@ if (!authorized) {
       }}
     >
       {/* Fixed Diagonal Watermark Layer across Reader View */}
-      <SecurityWatermarkOverlay userEmail={userEmail} />
+      
 
       {/* Built-in Confidential Document Reader Container (DRM Locked) */}
       <div
