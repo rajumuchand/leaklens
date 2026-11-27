@@ -1639,8 +1639,8 @@
                                 </div>
 
                                 <div style="padding-top:10px; border-top:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-                                    <input id="pdfUploadInput" type="file" accept=".pdf" style="font-size:12px; color:var(--text-secondary); max-width:240px;" />
-                                    <button class="lt-pill sm teal" onclick="runPdfInspector()">Inspect Uploaded PDF Layers</button>
+                                    <input id="pdfUploadInput" type="file" accept=".pdf,image/*" style="font-size:12px; color:var(--text-secondary); max-width:240px;" />
+                                    <button class="lt-pill sm teal" onclick="runPdfInspector()">Inspect Leaked PDF / Image</button>
                                 </div>
                             </div>
 
@@ -1753,14 +1753,17 @@
                                 </div>
 
                                 <div id="drmStatusBox" class="drm-countdown-card allowed">
-                                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
                                         <div>
                                             <div style="font-size:11px; letter-spacing:0.06em; color:var(--text-muted); text-transform:uppercase;">
                                                 Remaining Offline Permission Window
                                             </div>
                                             <div id="timerDisplay" class="timer-digits">00:00:30</div>
                                         </div>
-                                        <span id="drmDeviceHwid" class="mono-badge violet">HWID-PENDING</span>
+                                        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                            <span id="drmLeaseIdBadge" class="mono-badge">LEASE ACTIVE</span>
+                                            <span id="drmDeviceHwid" class="mono-badge violet">HWID-PENDING</span>
+                                        </div>
                                     </div>
                                     <div class="progress-track">
                                         <div id="drmProgressBar" class="progress-fill"></div>
@@ -3406,13 +3409,38 @@
             `).join('');
         }
 
+        let seenBeaconLogKeys = new Set();
+        let beaconHistoryInitialized = false;
+        let beaconWsConnected = false;
+
         async function refreshBeaconHistory() {
             const docVal = (document.getElementById('trackingDocFilter')?.value || 'all').trim() || 'all';
             try {
                 const resp = await apiFetch(`/api/tracking/history/${encodeURIComponent(docVal)}`);
                 if (!resp.ok) return;
                 const data = await resp.json();
-                if (Array.isArray(data?.records)) renderBeaconTelemetryRows(data.records);
+                if (Array.isArray(data?.records)) {
+                    const records = data.records;
+                    if (beaconHistoryInitialized && !beaconWsConnected && records.length > 0) {
+                        const newest = records[0];
+                        const key = `${newest.timestamp}|${newest.doc_id}|${newest.ip_address}|${newest.user_id || newest.original_recipient_id || ''}`;
+                        if (!seenBeaconLogKeys.has(key) && newest.alert_triggered !== false) {
+                            const toast = document.getElementById('webhookToast');
+                            const toastBody = document.getElementById('webhookToastBody');
+                            if (toast && toastBody) {
+                                toastBody.textContent = `🚨 Document Leak/Access Alert | Doc: ${newest.doc_id} | Sharer: ${newest.user_id || newest.original_recipient_id || newest.recipient_id} | Host/IP: ${newest.reverse_host || 'unresolved'} (${newest.ip_address}) | ${new Date(newest.timestamp).toLocaleString()}`;
+                                toast.classList.add('show');
+                                clearTimeout(webhookTimer);
+                                webhookTimer = setTimeout(() => toast.classList.remove('show'), 9000);
+                            }
+                        }
+                    }
+                    records.forEach((r) => {
+                        seenBeaconLogKeys.add(`${r.timestamp}|${r.doc_id}|${r.ip_address}|${r.user_id || r.original_recipient_id || ''}`);
+                    });
+                    beaconHistoryInitialized = true;
+                    renderBeaconTelemetryRows(records);
+                }
             } catch {}
         }
 
@@ -3439,6 +3467,7 @@
                 try {
                     ws = new WebSocket(wsUrl);
                     ws.onopen = () => {
+                        beaconWsConnected = true;
                         if (badge) {
                             badge.textContent = '● WS /ws/alerts CONNECTED';
                             badge.className = 'mono-badge teal';
@@ -3449,6 +3478,7 @@
                             const msg = JSON.parse(evt.data);
                             if (msg?.event === 'BEACON_TRIGGERED') {
                                 beaconLiveAlerts.unshift(msg);
+                                seenBeaconLogKeys.add(`${msg.timestamp}|${msg.doc_id}|${msg.ip_address}|${msg.user_id || msg.recipient_id || ''}`);
                                 const toast = document.getElementById('webhookToast');
                                 const toastBody = document.getElementById('webhookToastBody');
                                 if (toast && toastBody) {
@@ -3461,9 +3491,13 @@
                             }
                         } catch {}
                     };
+                    ws.onerror = () => {
+                        beaconWsConnected = false;
+                    };
                     ws.onclose = () => {
+                        beaconWsConnected = false;
                         if (badge) {
-                            badge.textContent = '○ WS /ws/alerts STANDBY';
+                            badge.textContent = '○ WS /ws/alerts STANDBY (POLL)';
                             badge.className = 'mono-badge gold';
                         }
                         setTimeout(connect, 5000);
@@ -3472,6 +3506,9 @@
             }
             connect();
             refreshBeaconHistory();
+            setInterval(() => {
+                if (!beaconWsConnected) refreshBeaconHistory();
+            }, 8000);
         })();
 
         function triggerWebhookAlert(recipientId, sessionId, inlineId) {
@@ -3751,9 +3788,35 @@
 
         async function runPdfInspector() {
             const file = document.getElementById('pdfUploadInput').files?.[0];
-            if (!file) { alert('Choose a .pdf file to inspect.'); return; }
+            if (!file) { alert('Choose a .pdf or image file to inspect.'); return; }
             const formData = new FormData();
             formData.append('file', file);
+            const docHint = (document.getElementById('lineageDocInput')?.value || '').trim();
+            if (docHint) formData.append('doc_id', docHint);
+            try {
+                const tardosResp = await apiFetch('/api/watermark/inspect-leak', { method: 'POST', body: formData });
+                if (tardosResp.ok) {
+                    const data = await tardosResp.json();
+                    const prevCount = data?.forensic_streams?.prev_updates_count ?? 0;
+                    const xmpCount = (data?.forensic_streams?.xmp_tags || []).length;
+                    renderInspectionResult({
+                        match_found: Boolean(data.match_found),
+                        verified: Boolean(data.traitor_flagged),
+                        recipient_id: `${data.traitor_name || data.traitor_id || '—'} (${data.traitor_id || 'N/A'})`,
+                        session_id: data.doc_id || docHint || 'DOC-HELIOS-2026',
+                        signature: `S_j=${Number(data.accusation_score || 0).toFixed(2)} > Z=${data.threshold_z ?? 4.2} (${data.confidence || '99.999%'})`,
+                        recovery_mode: 'TARDOS / ŠKORIĆ FORENSIC',
+                        source: `PDF Object Streams (/Prev:${prevCount}, XMP:${xmpCount})`,
+                        chunks_detected: data.lineage_path?.length || 1,
+                        chunks_verified: data.lineage_path?.length || 1
+                    });
+                    if (data?.doc_id && document.getElementById('lineageDocInput')) {
+                        document.getElementById('lineageDocInput').value = data.doc_id;
+                        refreshLineageChain();
+                    }
+                    return;
+                }
+            } catch {}
             try {
                 const resp = await apiFetch('/api/inspect-pdf', { method: 'POST', body: formData });
                 if (!resp.ok) throw new Error('offline');

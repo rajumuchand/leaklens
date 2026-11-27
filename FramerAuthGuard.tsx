@@ -2,8 +2,8 @@ import * as React from "react"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 
 /**
- * FramerAuthGuard — Main Website Route Guard & Logout Pill (for https://leaklens.framer.ai/)
- * 1. Captures ?token=... (or #access_token=...) passed back from https://linklenslogin.framer.website/
+ * FramerAuthGuard — Main Website Route Guard & Logout Pill
+ * 1. Captures ?token=... (or #access_token=...) passed back from Firebase Google Auth (/login)
  * 2. Validates the JWT session with GET {apiUrl}/api/auth/me
  * 3. Redirects unauthenticated visitors back to loginUrl when enforceRedirect is true
  * 4. Renders signed-in operator status + Logout button
@@ -15,7 +15,7 @@ export interface AuthGuardUser {
     picture?: string
 }
 
-const FRAMER_LOGIN_URL = "https://courageous-audience-435078.framer.app"
+const FRAMER_LOGIN_URL = "https://leaklens-77637.web.app/login"
 const BACKEND_URL = "https://leaklens-tyrn.vercel.app"
 
 function decodeJwtUserOffline(token: string): AuthGuardUser | null {

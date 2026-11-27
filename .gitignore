@@ -18,6 +18,8 @@ tunnel.log
 
 # macOS metadata
 .DS_Store
+Icon?
+.firebase/
 .vercel
 .env*
 leaklens_tracking.db

@@ -1397,11 +1397,16 @@ def _build_lineage_graph(doc_id: str) -> dict:
 
 def _extract_pdf_stream_forensics(file_bytes: bytes, filename: str) -> dict:
     """Extracts /Prev incremental updates, author paths, XMP metadata tags, and embedded IDs from PDF/image bytes."""
+    from urllib.parse import unquote
+
     raw_latin = file_bytes.decode("latin-1", errors="ignore")
     prev_updates = len(re.findall(r"/Prev\s+\d+", raw_latin))
     xmp_tags = re.findall(r"<(?:dc:creator|xmp:CreatorTool|pdf:Producer|xmp:ModifyDate)[^>]*>([^<]+)</[^>]+>", raw_latin)
     author_paths = re.findall(r"(?:/Users/[^\s/)\]>]+(?:/[^\s/)\]>]+)*|[A-Za-z]:\\\\[^\s)\]>]+)", raw_latin)
-    beacon_urls = re.findall(r"https?://[^\s)\]>\"']+/api/beacon/([^\s/]+)/([^\s/]+)/pixel\.png", raw_latin)
+    beacon_pattern = re.compile(r"https?://[^\s)\]>\"']+/api/beacon/([^\s/?#]+)/([^\s/?#]+)/pixel\.png")
+    beacon_urls = [
+        (unquote(d), unquote(u)) for d, u in beacon_pattern.findall(raw_latin)
+    ]
 
     pdf_meta: dict = {}
     extracted_text = ""
@@ -1410,6 +1415,39 @@ def _extract_pdf_stream_forensics(file_bytes: bytes, filename: str) -> dict:
             reader = PdfReader(io.BytesIO(file_bytes))
             for k, v in (reader.metadata or {}).items():
                 pdf_meta[str(k)] = str(v)
+
+            candidate_uris: list[str] = []
+            if "/CanaryBeaconURL" in pdf_meta:
+                candidate_uris.append(pdf_meta["/CanaryBeaconURL"])
+
+            root_obj = reader.trailer.get("/Root")
+            if root_obj is not None:
+                root_resolved = root_obj.get_object() if hasattr(root_obj, "get_object") else root_obj
+                open_act = root_resolved.get("/OpenAction") if isinstance(root_resolved, dict) else None
+                if open_act is not None:
+                    act_resolved = open_act.get_object() if hasattr(open_act, "get_object") else open_act
+                    if isinstance(act_resolved, dict) and act_resolved.get("/URI"):
+                        candidate_uris.append(str(act_resolved.get("/URI")))
+
+            for page in reader.pages:
+                annots = page.get("/Annots")
+                if annots is not None:
+                    annots_obj = annots.get_object() if hasattr(annots, "get_object") else annots
+                    if isinstance(annots_obj, list):
+                        for annot in annots_obj:
+                            annot_obj = annot.get_object() if hasattr(annot, "get_object") else annot
+                            if isinstance(annot_obj, dict):
+                                act = annot_obj.get("/A")
+                                act_obj = act.get_object() if hasattr(act, "get_object") else act
+                                if isinstance(act_obj, dict) and act_obj.get("/URI"):
+                                    candidate_uris.append(str(act_obj.get("/URI")))
+
+            for uri in candidate_uris:
+                for d, u in beacon_pattern.findall(uri):
+                    pair = (unquote(d), unquote(u))
+                    if pair not in beacon_urls:
+                        beacon_urls.append(pair)
+
             extracted_text = "\n".join(page.extract_text() or "" for page in reader.pages)
         except Exception:
             pass
@@ -2552,6 +2590,8 @@ def verify_pun_cp_abe_access(req: PunDrmEpochRequest):
 
     is_punctured = bool(row["is_punctured"])
     expires_dt = datetime.fromisoformat(row["expires_at"])
+    if expires_dt.tzinfo is None:
+        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
     now_dt = datetime.now(timezone.utc)
     remaining_sec = max(0, int((expires_dt - now_dt).total_seconds()))
 

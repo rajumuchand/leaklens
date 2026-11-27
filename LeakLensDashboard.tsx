@@ -680,6 +680,10 @@ export default function LeakLensDashboard(props: {
         return DEFAULT_REMOTE_BACKEND
     }, [normalizedBackendUrl])
 
+    const seenBeaconKeysRef = React.useRef<Set<string>>(new Set())
+    const historyBootstrappedRef = React.useRef<boolean>(false)
+    const wsConnectedRef = React.useRef<boolean>(false)
+
     const fetchTrackingHistory = React.useCallback(
         async (docIdOverride?: string) => {
             const targetDoc = (docIdOverride ?? trackingDocId).trim() || "all"
@@ -692,7 +696,32 @@ export default function LeakLensDashboard(props: {
                 if (resp.ok) {
                     const data = await resp.json()
                     if (Array.isArray(data?.records)) {
-                        setAccessHistory(data.records)
+                        const records = data.records
+                        if (historyBootstrappedRef.current && !wsConnectedRef.current && records.length > 0) {
+                            const newest = records[0]
+                            const key = `${newest.timestamp}|${newest.doc_id}|${newest.ip_address}|${newest.user_id || newest.original_recipient_id || ""}`
+                            if (!seenBeaconKeysRef.current.has(key) && newest.alert_triggered !== false) {
+                                const alertMsg: BeaconAlert = {
+                                    event: "BEACON_TRIGGERED",
+                                    doc_id: newest.doc_id,
+                                    recipient_id: newest.user_id || newest.original_recipient_id || newest.recipient_id || "Unknown",
+                                    ip_address: newest.ip_address || "unknown",
+                                    reverse_host: newest.reverse_host,
+                                    user_agent: newest.user_agent || "unknown",
+                                    timestamp: newest.timestamp,
+                                    message: "Document opened from unauthorized IP!",
+                                }
+                                setLiveAlerts((prev) => [alertMsg, ...prev.slice(0, 49)])
+                                setActiveBeaconToast(alertMsg)
+                            }
+                        }
+                        records.forEach((r: any) => {
+                            seenBeaconKeysRef.current.add(
+                                `${r.timestamp}|${r.doc_id}|${r.ip_address}|${r.user_id || r.original_recipient_id || ""}`
+                            )
+                        })
+                        historyBootstrappedRef.current = true
+                        setAccessHistory(records)
                     }
                 }
             } catch {
@@ -737,12 +766,18 @@ export default function LeakLensDashboard(props: {
             try {
                 ws = new WebSocket(wsUrl)
                 ws.onopen = () => {
-                    if (!isDisposed) setWsConnected(true)
+                    if (!isDisposed) {
+                        wsConnectedRef.current = true
+                        setWsConnected(true)
+                    }
                 }
                 ws.onmessage = (event) => {
                     try {
                         const msg: BeaconAlert = JSON.parse(event.data)
                         if (msg && msg.event === "BEACON_TRIGGERED") {
+                            seenBeaconKeysRef.current.add(
+                                `${msg.timestamp}|${msg.doc_id}|${msg.ip_address}|${msg.user_id || msg.recipient_id || ""}`
+                            )
                             setLiveAlerts((prev) => [msg, ...prev.slice(0, 49)])
                             setActiveBeaconToast(msg)
                             setAccessHistory((prev) => {
@@ -764,10 +799,14 @@ export default function LeakLensDashboard(props: {
                     }
                 }
                 ws.onerror = () => {
-                    if (!isDisposed) setWsConnected(false)
+                    if (!isDisposed) {
+                        wsConnectedRef.current = false
+                        setWsConnected(false)
+                    }
                 }
                 ws.onclose = () => {
                     if (!isDisposed) {
+                        wsConnectedRef.current = false
                         setWsConnected(false)
                         reconnectTimer = setTimeout(connectSocket, 4000)
                     }
@@ -802,7 +841,12 @@ export default function LeakLensDashboard(props: {
 
     React.useEffect(() => {
         fetchTrackingHistory(trackingDocId)
-    }, [trackingDocId, fetchTrackingHistory])
+        if (wsConnected) return
+        const pollId = setInterval(() => {
+            fetchTrackingHistory(trackingDocId)
+        }, 8000)
+        return () => clearInterval(pollId)
+    }, [trackingDocId, wsConnected, fetchTrackingHistory])
 
     const fetchLineageGraph = React.useCallback(
         async (docIdOverride?: string) => {

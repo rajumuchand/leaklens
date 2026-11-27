@@ -1,9 +1,7 @@
-import SecureDocumentReader from "@/components/SecureDocumentReader";
-import SupabaseAuth from "@/components/SupabaseAuth";
-import { createClient } from "@/utils/supabase/client";
+import React, { useEffect, useState } from "react";
 import LeakLensDashboard from "./LeakLensDashboard";
 
-const 
+const FRAMER_LOGIN_URL = "https://leaklens-77637.web.app/login";
 
 const MOCK_CONFIDENTIAL_DOCS = [
   {
@@ -100,48 +98,7 @@ export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(MOCK_CONFIDENTIAL_DOCS[0].id);
 
   // Global DRM keyboard lockdown across entire client-side reader view
-  // Supabase auth handling – replaces legacy token logic
-useEffect(() => {
-  const supabase = createClient();
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_IN" && session?.access_token) {
-      const email = session.user.email || "security_user@leaklens.io";
-      localStorage.setItem("access_token", session.access_token);
-      localStorage.setItem("user_email", email);
-      setUserEmail(email);
-      setAuthorized(true);
-    } else if (event === "SIGNED_OUT") {
-      localStorage.clear();
-      setAuthorized(false);
-    }
-  });
-  // Check existing session on mount
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session?.access_token) {
-      const email = session.user.email || "security_user@leaklens.io";
-      localStorage.setItem("access_token", session.access_token);
-      localStorage.setItem("user_email", email);
-      setUserEmail(email);
-      setAuthorized(true);
-    }
-  });
-  return () => {
-    subscription?.unsubscribe();
-  };
-}, []);
-
-// If not authorized, show Supabase login UI
-if (!authorized) {
-  return (
-    <div style={{ display: "flex", justifyContent: "center", marginTop: "4rem" }}>
-      <SupabaseAuth redirectUrl={window.location.origin} />
-    </div>
-  );
-}
-
-// Removed legacy token handling – Supabase auth now manages the session.
-// No FRAMER_LOGIN_URL fallback is used.
-
+  useEffect(() => {
     const handleKeyDown = (e) => {
       const key = (e.key || "").toLowerCase();
       const code = e.code || "";
@@ -162,51 +119,16 @@ if (!authorized) {
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, []);
 
-  // Client-side only Auth Handoff & Token Persistence (zero external fetch calls)
-  // Supabase auth handling – replaces legacy token logic
-useEffect(() => {
-  const supabase = createClient();
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_IN" && session?.access_token) {
-      const email = session.user.email || "security_user@leaklens.io";
-      localStorage.setItem("access_token", session.access_token);
-      localStorage.setItem("user_email", email);
-      setUserEmail(email);
-      setAuthorized(true);
-    } else if (event === "SIGNED_OUT") {
-      localStorage.clear();
-      setAuthorized(false);
-    }
-  });
-  // Check existing session on mount
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session?.access_token) {
-      const email = session.user.email || "security_user@leaklens.io";
-      localStorage.setItem("access_token", session.access_token);
-      localStorage.setItem("user_email", email);
-      setUserEmail(email);
-      setAuthorized(true);
-    }
-  });
-  return () => {
-    subscription?.unsubscribe();
-  };
-}, []);
-
-// If not authorized, show Supabase login UI
-if (!authorized) {
-  return (
-    <div style={{ display: "flex", justifyContent: "center", marginTop: "4rem" }}>
-      <SupabaseAuth redirectUrl={window.location.origin} />
-    </div>
-  );
-}
-
-// Removed legacy token handling – Supabase auth now manages the session.
-// No FRAMER_LOGIN_URL fallback is used.
+  // Client-side Firebase/JWT token handoff & guard
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
     const urlParams = new URLSearchParams(window.location.search);
-    const tokenFromUrl = urlParams.get("token");
+    const hash = window.location.hash || "";
+    const hashMatch = hash.match(/access_token=([^&]+)/);
+    const tokenFromUrl =
+      urlParams.get("token") ||
+      (hashMatch && hashMatch[1] ? decodeURIComponent(hashMatch[1]) : null);
     const emailFromUrl = urlParams.get("email");
 
     if (tokenFromUrl) {
@@ -219,20 +141,18 @@ if (!authorized) {
       }
     }
 
-    // Removed legacy token handling – Supabase auth now manages the session.
-// No FRAMER_LOGIN_URL fallback is used.
- – Supabase auth now manages sessions
-// The previous FRAMER_LOGIN_URL fallback has been eliminated.
-
-    // Supabase auth handles session; legacy URL fallback removed.
-      window.location.href = FRAMER_LOGIN_URL;
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      const ret = `${window.location.origin}${window.location.pathname}`;
+      window.location.href = `${FRAMER_LOGIN_URL}?redirect=${encodeURIComponent(ret)}`;
       return;
     }
 
     const decoded = decodeTokenIdentity(token);
     if (decoded?.expired) {
       localStorage.clear();
-      window.location.href = FRAMER_LOGIN_URL;
+      const ret = `${window.location.origin}${window.location.pathname}`;
+      window.location.href = `${FRAMER_LOGIN_URL}?redirect=${encodeURIComponent(ret)}`;
       return;
     }
 
@@ -266,7 +186,7 @@ if (!authorized) {
       }}
     >
       {/* Fixed Diagonal Watermark Layer across Reader View */}
-      
+      <SecurityWatermarkOverlay userEmail={userEmail} />
 
       {/* Built-in Confidential Document Reader Container (DRM Locked) */}
       <div

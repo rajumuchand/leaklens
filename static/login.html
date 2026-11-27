@@ -33,23 +33,24 @@
             background: #000000;
             z-index: 1;
         }
-        /* Desktop / Laptop layout: sits cleanly on the right beside the 3D cube */
+        /* Desktop / Laptop layout: opaque cover over Framer's right text/button column beside the 3D cube */
         .login-panel {
             position: fixed;
-            top: 54%;
-            right: clamp(32px, 6vw, 88px);
+            top: 52%;
+            right: clamp(24px, 5vw, 72px);
             transform: translateY(-50%);
-            width: 320px;
+            width: clamp(310px, 34vw, 390px);
+            min-height: 270px;
             z-index: 30;
             display: flex;
             flex-direction: column;
             align-items: flex-start;
+            justify-content: center;
             gap: 14px;
-            padding: 20px;
+            padding: 28px 24px;
             border-radius: 20px;
-            background: rgba(0, 0, 0, 0.45);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: #000000;
+            box-shadow: 0 0 60px 44px #000000;
         }
         .login-title {
             margin: 0;
@@ -104,22 +105,21 @@
         @media (max-width: 809.98px) {
             .login-panel {
                 top: auto;
-                bottom: 24px;
+                bottom: 20px;
                 left: 50%;
                 right: auto;
                 transform: translateX(-50%);
-                width: calc(100vw - 32px);
-                max-width: 380px;
+                width: calc(100vw - 28px);
+                max-width: 390px;
+                min-height: auto;
                 align-items: center;
                 text-align: center;
-                padding: 22px 18px;
+                padding: 24px 20px;
                 border-radius: 22px;
-                background: rgba(10, 10, 16, 0.78);
+                background: #06060C;
                 border: 1px solid rgba(255, 255, 255, 0.14);
-                backdrop-filter: blur(20px);
-                -webkit-backdrop-filter: blur(20px);
-                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
-                gap: 10px;
+                box-shadow: 0 0 60px 36px #000000;
+                gap: 12px;
             }
             .login-title {
                 font-size: 24px;
