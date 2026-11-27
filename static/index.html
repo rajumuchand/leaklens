@@ -1385,7 +1385,7 @@
             </nav>
 
             <div class="nav-mobile-actions">
-                <a href="/login" id="navLoginBtn" class="lt-pill sm teal" style="height:36px; text-decoration:none;">Login</a>
+                <a href="https://leaklens-77637.web.app/login" id="navLoginBtn" onclick="event.preventDefault(); redirectToLogin();" class="lt-pill sm teal" style="height:36px; text-decoration:none;">Login</a>
                 <button type="button" id="installNavBtn" class="lt-pill sm teal" onclick="triggerPwaInstall()" style="height:36px;">+ Install App</button>
                 <button type="button" id="navLogoutBtn" class="lt-pill sm danger" onclick="handleLogout()" style="height:36px; display:none;">Logout</button>
             </div>
@@ -4154,9 +4154,22 @@
             if (wmRec) wmRec.value = `${authedUser.name} (${authedUser.email})`;
         }
 
-        function redirectToLogin() {
+        const FIREBASE_LOGIN_ORIGIN = 'https://leaklens-77637.web.app';
+
+        function getLoginPageUrl(extraQuery) {
+            const host = window.location.hostname || '';
+            const isFirebaseHost = host.endsWith('.web.app') || host.endsWith('.firebaseapp.com');
+            const loginBase = isFirebaseHost ? `${window.location.origin}/login` : `${FIREBASE_LOGIN_ORIGIN}/login`;
             const returnUrl = `${window.location.origin}/`;
-            window.location.replace(`/login?redirect=${encodeURIComponent(returnUrl)}`);
+            const q = new URLSearchParams({ redirect: returnUrl });
+            if (extraQuery) {
+                for (const [k, v] of Object.entries(extraQuery)) q.set(k, v);
+            }
+            return `${loginBase}?${q.toString()}`;
+        }
+
+        function redirectToLogin() {
+            window.location.replace(getLoginPageUrl());
         }
         const redirectToFramerLogin = redirectToLogin;
 
@@ -4169,7 +4182,7 @@
             localStorage.removeItem('user_picture');
             const wmRec = document.getElementById('wmRecipient');
             if (wmRec) wmRec.value = 'USR-8492 (Alice)';
-            window.location.replace('/login?logged_out=1');
+            window.location.replace(getLoginPageUrl({ logged_out: '1' }));
         }
         const logoutGoogleSession = handleLogout;
 

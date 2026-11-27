@@ -175,7 +175,21 @@
         };
 
         const FRAMER_LOGIN_URL = 'https://courageous-audience-435078.framer.app/';
+        const FIREBASE_HOSTING_LOGIN = 'https://leaklens-77637.web.app/login';
         const CLOUD_BACKEND_ORIGIN = 'https://leaklens-tyrn.vercel.app';
+
+        // Always execute Firebase Google Sign-In on the authorized Firebase Hosting domain
+        const currentHost = window.location.hostname || '';
+        const isAuthorizedFirebaseHost =
+            currentHost.endsWith('.web.app') || currentHost.endsWith('.firebaseapp.com');
+        if (!isAuthorizedFirebaseHost) {
+            const fwdParams = new URLSearchParams(window.location.search);
+            if (!fwdParams.get('redirect')) {
+                fwdParams.set('redirect', `${window.location.origin}/`);
+            }
+            window.location.replace(`${FIREBASE_HOSTING_LOGIN}?${fwdParams.toString()}`);
+        }
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const googleProvider = new GoogleAuthProvider();
@@ -279,7 +293,10 @@
                     return;
                 }
                 if (code === 'auth/unauthorized-domain') {
-                    showError(`Authorize "${window.location.hostname}" in Firebase Console -> Authentication -> Settings -> Authorized domains.`);
+                    const fwdParams = new URLSearchParams(window.location.search);
+                    if (!fwdParams.get('redirect')) fwdParams.set('redirect', `${window.location.origin}/`);
+                    window.location.replace(`${FIREBASE_HOSTING_LOGIN}?${fwdParams.toString()}`);
+                    return;
                 } else if (code !== 'auth/popup-closed-by-user') {
                     showError(err?.message || 'Google sign-in failed.');
                 }
@@ -303,7 +320,10 @@
             if (loggedOut) {
                 await signOut(auth).catch(() => {});
                 try {
-                    window.history.replaceState({}, document.title, window.location.pathname);
+                    const cleanParams = new URLSearchParams(window.location.search);
+                    cleanParams.delete('logged_out');
+                    const qs = cleanParams.toString();
+                    window.history.replaceState({}, document.title, qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
                 } catch {}
                 return;
             }

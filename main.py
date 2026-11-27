@@ -1329,7 +1329,19 @@ def demo_page():
 
 
 @app.get("/login")
-def login_page():
+def login_page(request: Request):
+    from urllib.parse import urlencode
+    proto = _get_forwarded_proto(request)
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "leaklens-omega.vercel.app"
+    is_firebase_host = fwd_host.endswith(".web.app") or fwd_host.endswith(".firebaseapp.com")
+    if not is_firebase_host:
+        q_params = dict(request.query_params)
+        if not q_params.get("redirect"):
+            q_params["redirect"] = f"{proto}://{fwd_host}/"
+        return RedirectResponse(
+            url=f"https://leaklens-77637.web.app/login?{urlencode(q_params)}",
+            status_code=302,
+        )
     if os.path.exists(STATIC_LOGIN_PATH):
         return FileResponse(
             STATIC_LOGIN_PATH,
