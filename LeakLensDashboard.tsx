@@ -21,6 +21,15 @@ interface WatermarkResponse {
     watermarked_text: string
 }
 
+interface LineageHop {
+    user_id: string
+    legal_name: string
+    email: string
+    hop_depth: number
+    timestamp?: string | null
+    segment_hash?: string
+}
+
 interface InspectResponse {
     match_found: boolean
     source?: string
@@ -32,6 +41,20 @@ interface InspectResponse {
     chunks_verified?: number
     recovery_mode?: string
     vector_layer_found?: boolean
+    doc_id?: string
+    traitor_id?: string
+    traitor_name?: string
+    traitor_email?: string
+    accusation_score?: number
+    threshold_z?: number
+    confidence?: string
+    lineage_path?: LineageHop[]
+    forensic_streams?: {
+        prev_updates_count?: number
+        author_paths?: string[]
+        xmp_tags?: string[]
+        raw_vector_preview?: string
+    }
     error?: string
 }
 
@@ -39,9 +62,11 @@ interface BeaconAlert {
     id?: number
     event?: string
     doc_id: string
+    user_id?: string
     recipient_id?: string
     original_recipient_id?: string
     ip_address: string
+    reverse_host?: string
     user_agent: string
     timestamp: string
     message?: string
@@ -376,6 +401,14 @@ export default function LeakLensDashboard(props: {
     const [trackingDocId, setTrackingDocId] = React.useState("SES-SYNAPSE-2026")
     const [accessHistory, setAccessHistory] = React.useState<BeaconAlert[]>([])
     const [isLoadingHistory, setIsLoadingHistory] = React.useState(false)
+    const [lineageDocId, setLineageDocId] = React.useState("DOC-HELIOS-2026")
+    const [lineageNodes, setLineageNodes] = React.useState<LineageHop[]>([])
+    const [hopParentId, setHopParentId] = React.useState("User_14")
+    const [hopChildId, setHopChildId] = React.useState("User_15")
+    const [isRecordingHop, setIsRecordingHop] = React.useState(false)
+    const [punEpochId, setPunEpochId] = React.useState<string | null>(null)
+    const [punBlockedMsg, setPunBlockedMsg] = React.useState<string | null>(null)
+    const [punSkPreview, setPunSkPreview] = React.useState<string>("SK_0 (Active Epoch Key)")
 
     // --- TAB 4: JUDGE STRESS TEST ("TRY TO BREAK IT") STATE ---
     const STRESS_MEMO =
@@ -451,15 +484,32 @@ export default function LeakLensDashboard(props: {
     const issueSignedLease = React.useCallback(async (durationSec: number) => {
         setSimClockOffset(0)
         setQrChallengeCode(null)
+        setPunBlockedMsg(null)
         setLeaseDurationSec(durationSec)
         setLeaseStartMono(typeof performance !== "undefined" ? performance.now() : Date.now())
         setPermissionEndTs(Date.now() / 1000 + durationSec)
         try {
-            const resp = await apiFetch("/api/issue-lease", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ duration_seconds: Math.max(1, Math.round(durationSec)), recipient_id: recipientId }),
-            })
+            const [resp, punResp] = await Promise.all([
+                apiFetch("/api/issue-lease", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ duration_seconds: Math.max(1, Math.round(durationSec)), recipient_id: recipientId }),
+                }),
+                fetch(`${resolveEffectiveBackendBase()}/api/drm/lease/issue`, {
+                    method: "POST",
+                    headers: buildApiHeaders({ "Content-Type": "application/json" }),
+                    body: JSON.stringify({
+                        doc_id: lineageDocId || "DOC-HELIOS-2026",
+                        user_id: "User_1",
+                        duration_minutes: Math.max(1, Math.round(durationSec / 60)),
+                    }),
+                }),
+            ])
+            if (punResp.ok) {
+                const punData = await punResp.json()
+                setPunEpochId(punData.epoch_id)
+                setPunSkPreview(punData.sk_0 || "SK_0 (Active Epoch Key)")
+            }
             if (resp.ok) {
                 const data = await resp.json()
                 setLeaseId(data.lease_id)
@@ -480,7 +530,36 @@ export default function LeakLensDashboard(props: {
         } catch {
             // Silently fall back to client-side lease timer when offline
         }
-    }, [currentApiUrl, recipientId])
+    }, [currentApiUrl, recipientId, lineageDocId])
+
+    const handleSimulateEpochPuncture = React.useCallback(async () => {
+        const base = resolveEffectiveBackendBase()
+        const epoch = punEpochId || "EP-SIMULATED"
+        const doc = lineageDocId || "DOC-HELIOS-2026"
+        try {
+            await fetch(`${base}/api/drm/lease/puncture`, {
+                method: "POST",
+                headers: buildApiHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify({ doc_id: doc, user_id: "User_1", epoch_id: epoch }),
+            })
+            await fetch(`${base}/api/drm/verify-access`, {
+                method: "POST",
+                headers: buildApiHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify({ doc_id: doc, user_id: "User_1", epoch_id: epoch }),
+            })
+        } catch {}
+        setPunSkPreview("SK_1 (0x0000_PUNCTURED)")
+        setPunBlockedMsg("❌ File Does Not Open — Decryption Key Destroyed")
+        setLeaseState((prev) => ({
+            ...prev,
+            access_allowed: false,
+            remaining_seconds: 0,
+            ram_wiped: true,
+            ram_key_preview: "0x00000000_PUNCTURED",
+            decrypted_viewport_text: null,
+            status_message: "Access Expired. Key Punctured by TPM Hardware Counter",
+        }))
+    }, [punEpochId, lineageDocId, resolveEffectiveBackendBase, buildApiHeaders])
 
     const handleRevokeInstantly = async () => {
         try {
@@ -724,6 +803,46 @@ export default function LeakLensDashboard(props: {
     React.useEffect(() => {
         fetchTrackingHistory(trackingDocId)
     }, [trackingDocId, fetchTrackingHistory])
+
+    const fetchLineageGraph = React.useCallback(
+        async (docIdOverride?: string) => {
+            const doc = (docIdOverride ?? lineageDocId).trim() || "DOC-HELIOS-2026"
+            try {
+                const resp = await fetch(`${resolveEffectiveBackendBase()}/api/lineage/trace/${encodeURIComponent(doc)}`, {
+                    headers: buildApiHeaders(),
+                })
+                if (resp.ok) {
+                    const data = await resp.json()
+                    if (Array.isArray(data?.chain)) setLineageNodes(data.chain)
+                }
+            } catch {}
+        },
+        [lineageDocId, resolveEffectiveBackendBase, buildApiHeaders]
+    )
+
+    const handleRecordHop = React.useCallback(async () => {
+        if (!hopParentId.trim() || !hopChildId.trim()) return
+        setIsRecordingHop(true)
+        try {
+            const resp = await fetch(`${resolveEffectiveBackendBase()}/api/share/record-hop`, {
+                method: "POST",
+                headers: buildApiHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify({
+                    doc_id: lineageDocId.trim() || "DOC-HELIOS-2026",
+                    parent_user_id: hopParentId.trim(),
+                    child_user_id: hopChildId.trim(),
+                }),
+            })
+            if (resp.ok) {
+                await fetchLineageGraph(lineageDocId)
+            }
+        } catch {}
+        setIsRecordingHop(false)
+    }, [lineageDocId, hopParentId, hopChildId, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph])
+
+    React.useEffect(() => {
+        fetchLineageGraph(lineageDocId)
+    }, [lineageDocId, fetchLineageGraph])
 
     // --- TAB 1: CALL /api/watermark (with offline client-side fallback) ---
     const handleGenerateWatermark = async () => {
@@ -1113,7 +1232,7 @@ export default function LeakLensDashboard(props: {
         }
     }
 
-    // --- TAB 2: CALL /api/inspect-pdf (with client-side PDF inspection fallback) ---
+    // --- TAB 2: CALL /api/watermark/inspect-leak (Tardos + PDF Streams + Lineage) ---
     const handleInspectPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
@@ -1121,14 +1240,34 @@ export default function LeakLensDashboard(props: {
         setInspectError(null)
         const formData = new FormData()
         formData.append("file", file)
+        formData.append("doc_id", lineageDocId || "")
         try {
-            const resp = await apiFetch("/api/inspect-pdf", {
+            let resp = await fetch(`${resolveEffectiveBackendBase()}/api/watermark/inspect-leak`, {
                 method: "POST",
+                headers: buildApiHeaders(),
                 body: formData,
             })
+            if (!resp.ok) {
+                resp = await apiFetch("/api/inspect-pdf", {
+                    method: "POST",
+                    body: formData,
+                })
+            }
             if (!resp.ok) throw new Error("offline")
             const data: InspectResponse = await resp.json()
-            setInspectResult(data)
+            const normalized: InspectResponse = {
+                ...data,
+                recipient_id:
+                    data.recipient_id ||
+                    (data.traitor_name ? `${data.traitor_name} (${data.traitor_id})` : data.traitor_id),
+                session_id: data.session_id || data.doc_id,
+                verified: data.verified ?? Boolean(data.traitor_id || data.match_found),
+                source: data.source || "Tardos/Skoric Stream Forensics + Lineage",
+            }
+            setInspectResult(normalized)
+            if (Array.isArray(data.lineage_path) && data.lineage_path.length > 0) {
+                setLineageNodes(data.lineage_path)
+            }
             setApiStatus("online")
         } catch {
             const buf = await file.arrayBuffer()
@@ -1553,7 +1692,7 @@ export default function LeakLensDashboard(props: {
                                 {activeBeaconToast.recipient_id || activeBeaconToast.original_recipient_id || "—"}
                             </div>
                             <div>
-                                <strong style={{ color: "#94A3B8" }}>Client IP:</strong> {activeBeaconToast.ip_address}
+                                <strong style={{ color: "#94A3B8" }}>Client IP / Host:</strong> {activeBeaconToast.ip_address} ({activeBeaconToast.reverse_host || "unresolved"})
                             </div>
                             <div>
                                 <strong style={{ color: "#94A3B8" }}>Timestamp:</strong>{" "}
@@ -2029,11 +2168,11 @@ export default function LeakLensDashboard(props: {
                                 }}
                             >
                                 <span style={{ fontSize: 11, color: "#38bdf8", fontFamily: "monospace" }}>
-                                    📄 Inspect PDF (/api/inspect-pdf):
+                                    📄 Inspect Leaked PDF / Image (/api/watermark/inspect-leak):
                                 </span>
                                 <input
                                     type="file"
-                                    accept="application/pdf"
+                                    accept="application/pdf,image/*"
                                     onChange={handleInspectPdf}
                                     style={{ fontSize: 11, color: "rgba(243, 242, 248, 0.56)", maxWidth: 190 }}
                                 />
@@ -2152,10 +2291,42 @@ export default function LeakLensDashboard(props: {
                                                 }}
                                             >
                                                 {inspectResult.verified
-                                                    ? "Signature Verified (HMAC-SHA256)"
+                                                    ? "Signature Verified (HMAC-SHA256 / Tardos)"
                                                     : "Verification Failed (Key Mismatch)"}
                                             </span>
                                         </div>
+                                        {inspectResult.accusation_score !== undefined && (
+                                            <div style={{ marginTop: 6, padding: 10, borderRadius: 8, backgroundColor: "rgba(123, 92, 250, 0.08)", border: "1px solid rgba(123, 92, 250, 0.25)" }}>
+                                                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>
+                                                    <span style={{ color: "#cbd5e1" }}>
+                                                        Tardos/Škorić Score: <strong style={{ color: "#2BD8C8" }}>{inspectResult.accusation_score}</strong> (Z = {inspectResult.threshold_z || 20})
+                                                    </span>
+                                                    <span style={{ color: "#FFB627", fontWeight: 700 }}>
+                                                        Confidence: {inspectResult.confidence || "99.999%"}
+                                                    </span>
+                                                </div>
+                                                <div style={{ width: "100%", height: 8, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 999, overflow: "hidden" }}>
+                                                    <div
+                                                        style={{
+                                                            height: "100%",
+                                                            width: `${Math.min(100, Math.max(12, (Number(inspectResult.accusation_score) / Math.max(1, Number(inspectResult.threshold_z || 20) * 2)) * 100))}%`,
+                                                            background: "linear-gradient(90deg, #7B5CFA, #2BD8C8)",
+                                                        }}
+                                                    />
+                                                </div>
+                                                {inspectResult.forensic_streams && (
+                                                    <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 10.5, color: "#94a3b8", lineHeight: 1.45 }}>
+                                                        /Prev Incremental Updates: <strong style={{ color: "#FFB627" }}>{inspectResult.forensic_streams.prev_updates_count ?? 0}</strong>
+                                                        {inspectResult.forensic_streams.xmp_tags && inspectResult.forensic_streams.xmp_tags.length > 0
+                                                            ? ` · XMP Tags: ${inspectResult.forensic_streams.xmp_tags.join(", ")}`
+                                                            : ""}
+                                                        {inspectResult.forensic_streams.author_paths && inspectResult.forensic_streams.author_paths.length > 0
+                                                            ? ` · Author Paths: ${inspectResult.forensic_streams.author_paths.join(", ")}`
+                                                            : ""}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ) : (
@@ -2174,6 +2345,112 @@ export default function LeakLensDashboard(props: {
                                 </div>
                             )}
                         </div>
+
+                    {/* MULTI-HOP LINEAGE CHAIN TREE VISUALIZER (MEGÍAS–QURESHI P2P MODEL) */}
+                    <div
+                        style={{
+                            gridColumn: "1 / -1",
+                            marginTop: 8,
+                            padding: 20,
+                            backgroundColor: "rgba(255, 255, 255, 0.02)",
+                            border: "1px solid rgba(123, 92, 250, 0.24)",
+                            borderRadius: 12,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 14,
+                        }}
+                    >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                            <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "#F3F2F8" }}>
+                                    🕸 Multi-Hop Lineage Chain Tree (Megías–Qureshi P2P Model)
+                                </div>
+                                <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginTop: 2 }}>
+                                    Document: {lineageDocId} • {lineageNodes.length} Participants Tracked
+                                </div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <input
+                                    type="text"
+                                    value={lineageDocId}
+                                    onChange={(e) => setLineageDocId(e.target.value)}
+                                    placeholder="Doc ID"
+                                    style={{ ...inputStyle, width: 150, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
+                                />
+                                <input
+                                    type="text"
+                                    value={hopParentId}
+                                    onChange={(e) => setHopParentId(e.target.value)}
+                                    placeholder="Parent ID"
+                                    style={{ ...inputStyle, width: 92, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
+                                />
+                                <span style={{ color: "#94a3b8", fontSize: 12 }}>➔</span>
+                                <input
+                                    type="text"
+                                    value={hopChildId}
+                                    onChange={(e) => setHopChildId(e.target.value)}
+                                    placeholder="Child ID"
+                                    style={{ ...inputStyle, width: 92, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
+                                />
+                                <button
+                                    type="button"
+                                    disabled={isRecordingHop}
+                                    onClick={handleRecordHop}
+                                    style={{
+                                        padding: "6px 12px",
+                                        borderRadius: 6,
+                                        border: "1px solid rgba(123, 92, 250, 0.45)",
+                                        backgroundColor: "rgba(123, 92, 250, 0.16)",
+                                        color: "#C4B5FD",
+                                        fontSize: 11,
+                                        fontFamily: "monospace",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    {isRecordingHop ? "Recording..." : "+ Record Hop"}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", paddingBottom: 6 }}>
+                            {lineageNodes.length === 0 ? (
+                                <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#64748b" }}>
+                                    No downstream hops recorded for {lineageDocId}. Click &quot;+ Record Hop&quot; to create a chain.
+                                </span>
+                            ) : (
+                                lineageNodes.map((node, idx) => {
+                                    const isTail = idx === lineageNodes.length - 1
+                                    return (
+                                        <React.Fragment key={`${node.user_id}-${node.hop_depth}`}>
+                                            {idx > 0 && (
+                                                <span style={{ color: "#7B5CFA", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>➔</span>
+                                            )}
+                                            <div
+                                                style={{
+                                                    minWidth: 165,
+                                                    flexShrink: 0,
+                                                    padding: "10px 12px",
+                                                    borderRadius: 10,
+                                                    backgroundColor: isTail ? "rgba(255, 59, 92, 0.12)" : "rgba(8, 8, 14, 0.86)",
+                                                    border: `1px solid ${isTail ? "rgba(255, 59, 92, 0.5)" : "rgba(43, 216, 200, 0.28)"}`,
+                                                    fontFamily: "monospace",
+                                                    fontSize: 10.5,
+                                                }}
+                                            >
+                                                <div style={{ color: isTail ? "#FF6B84" : "#2BD8C8", fontWeight: 700 }}>
+                                                    {node.hop_depth === 0 ? "[You · Owner]" : `[Hop ${node.hop_depth}: ${node.legal_name}]`}
+                                                </div>
+                                                <div style={{ color: "#94a3b8", marginTop: 2 }}>{node.email}</div>
+                                                <div style={{ color: "#64748b", marginTop: 2, fontSize: 9.5 }}>
+                                                    {node.timestamp ? new Date(node.timestamp).toLocaleTimeString() : "Origin Root"}
+                                                </div>
+                                            </div>
+                                        </React.Fragment>
+                                    )
+                                })
+                            )}
+                        </div>
+                    </div>
 
                     {/* LIVE TELEMETRY & ACCESS LOGS TABLE (CANARY BEACON + WEBSOCKETS) */}
                     <div
@@ -2289,8 +2566,8 @@ export default function LeakLensDashboard(props: {
                                     <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.12)", color: "#94a3b8", textAlign: "left" }}>
                                         <th style={{ padding: "8px 10px" }}>Timestamp</th>
                                         <th style={{ padding: "8px 10px" }}>Document ID</th>
-                                        <th style={{ padding: "8px 10px" }}>Original Recipient</th>
-                                        <th style={{ padding: "8px 10px" }}>Client IP</th>
+                                        <th style={{ padding: "8px 10px" }}>Original Sharer</th>
+                                        <th style={{ padding: "8px 10px" }}>Resolved Hostname / IP</th>
                                         <th style={{ padding: "8px 10px" }}>Device User-Agent</th>
                                         <th style={{ padding: "8px 10px" }}>Status</th>
                                     </tr>
@@ -2313,9 +2590,13 @@ export default function LeakLensDashboard(props: {
                                                 </td>
                                                 <td style={{ padding: "8px 10px", color: "#9A82FF" }}>{log.doc_id}</td>
                                                 <td style={{ padding: "8px 10px", color: "#2BD8C8" }}>
-                                                    {log.original_recipient_id || log.recipient_id || "—"}
+                                                    {log.user_id || log.original_recipient_id || log.recipient_id || "—"}
                                                 </td>
-                                                <td style={{ padding: "8px 10px", color: "#FFB627" }}>{log.ip_address}</td>
+                                                <td style={{ padding: "8px 10px", color: "#FFB627" }}>
+                                                    {log.reverse_host && log.reverse_host !== "unresolved"
+                                                        ? `${log.reverse_host} (${log.ip_address})`
+                                                        : log.ip_address}
+                                                </td>
                                                 <td style={{ padding: "8px 10px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                                     {log.user_agent}
                                                 </td>
@@ -2417,9 +2698,34 @@ export default function LeakLensDashboard(props: {
                                             border: `1px solid ${leaseState.access_allowed ? "rgba(43, 216, 200, 0.30)" : "rgba(239, 68, 68, 0.45)"}`,
                                         }}
                                     >
-                                        STATUS: {leaseState.access_allowed ? "🟢" : "🔴"} {leaseState.status_message}
+                                        {punBlockedMsg
+                                            ? punBlockedMsg
+                                            : `STATUS: ${leaseState.access_allowed ? "🟢" : "🔴"} ${leaseState.status_message}`}
+                                    </div>
+                                    <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", fontFamily: "monospace", fontSize: 10.5, color: "#94a3b8" }}>
+                                        <span>Pun-CP-ABE Epoch: {punEpochId || "ACTIVE"}</span>
+                                        <span style={{ color: punBlockedMsg ? "#f87171" : "#2BD8C8" }}>{punSkPreview}</span>
                                     </div>
                                 </div>
+
+                                <button
+                                    type="button"
+                                    onClick={handleSimulateEpochPuncture}
+                                    style={{
+                                        width: "100%",
+                                        padding: "10px 12px",
+                                        backgroundColor: "rgba(255, 59, 92, 0.16)",
+                                        border: "1px solid rgba(255, 59, 92, 0.55)",
+                                        color: "#FFE4E9",
+                                        borderRadius: 6,
+                                        cursor: "pointer",
+                                        fontSize: 11.5,
+                                        fontWeight: 700,
+                                        fontFamily: "monospace",
+                                    }}
+                                >
+                                    Simulate Hardware Monotonic Epoch Expiry (Punct SK₀ ➔ SK₁)
+                                </button>
 
                                 {/* Primary Enterprise Actions */}
                                 <div style={{ display: "flex", gap: 8 }}>

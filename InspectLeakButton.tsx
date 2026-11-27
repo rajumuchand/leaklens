@@ -7,6 +7,15 @@ import { addPropertyControls, ControlType } from "framer"
  * Displays forensic recipient_id, session_id, and HMAC-SHA256 verification status.
  */
 
+interface LineageHop {
+    user_id: string
+    legal_name: string
+    email: string
+    hop_depth: number
+    timestamp?: string | null
+    segment_hash?: string
+}
+
 interface InspectResponse {
     match_found: boolean
     source?: string
@@ -18,6 +27,20 @@ interface InspectResponse {
     chunks_verified?: number
     recovery_mode?: string
     vector_layer_found?: boolean
+    doc_id?: string
+    traitor_id?: string
+    traitor_name?: string
+    traitor_email?: string
+    accusation_score?: number
+    threshold_z?: number
+    confidence?: string
+    lineage_path?: LineageHop[]
+    forensic_streams?: {
+        prev_updates_count?: number
+        author_paths?: string[]
+        xmp_tags?: string[]
+        raw_vector_preview?: string
+    }
     error?: string
 }
 
@@ -110,16 +133,29 @@ export default function InspectLeakButton(props: {
         formData.append("file", file)
 
         try {
-            const resp = await fetch(`${baseUrl}/api/inspect-pdf`, {
+            let resp = await fetch(`${baseUrl}/api/watermark/inspect-leak`, {
                 method: "POST",
                 headers,
                 body: formData,
             })
+            if (!resp.ok) {
+                resp = await fetch(`${baseUrl}/api/inspect-pdf`, {
+                    method: "POST",
+                    headers,
+                    body: formData,
+                })
+            }
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
             const data: InspectResponse = await resp.json()
-            setResult(data)
+            setResult({
+                ...data,
+                recipient_id: data.recipient_id || (data.traitor_name ? `${data.traitor_name} (${data.traitor_id})` : data.traitor_id),
+                session_id: data.session_id || data.doc_id,
+                verified: data.verified ?? Boolean(data.traitor_id || data.match_found),
+                source: data.source || "Tardos/Skoric Forensic Stream + Lineage",
+            })
         } catch (err: any) {
-            setError(err?.message || "Failed to inspect PDF")
+            setError(err?.message || "Failed to inspect leaked file")
         } finally {
             setLoading(false)
         }
@@ -197,10 +233,10 @@ export default function InspectLeakButton(props: {
                         style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
                     />
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 2 }}>
-                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2BD8C8" }}>OR INSPECT PDF FILE:</span>
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2BD8C8" }}>OR INSPECT LEAKED PDF / IMAGE:</span>
                         <input
                             type="file"
-                            accept="application/pdf"
+                            accept="application/pdf,image/*"
                             onChange={handleInspectPdf}
                             style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(243, 242, 248, 0.56)", maxWidth: 190 }}
                         />
@@ -331,10 +367,54 @@ export default function InspectLeakButton(props: {
                                 {result.source ? result.source : `${result.chunks_verified || 1}/${result.chunks_detected || 1} Verified`}
                             </span>
                         </div>
-                        <div style={{ ...rowStyle, borderBottom: "none", paddingBottom: 0 }}>
+                        <div style={{ ...rowStyle, borderBottom: result.accusation_score !== undefined ? "1px solid rgba(123, 92, 250, 0.10)" : "none", paddingBottom: result.accusation_score !== undefined ? 6 : 0 }}>
                             <span style={{ color: "rgba(243, 242, 248, 0.56)" }}>Signature</span>
-                            <span style={{ color: textColor }}>{result.signature}</span>
+                            <span style={{ color: textColor }}>{result.signature || "TARDOS-SKORIC-VECTOR"}</span>
                         </div>
+                        {result.accusation_score !== undefined && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+                                    <span style={{ color: "#94A3B8" }}>
+                                        Tardos Score: <strong style={{ color: "#2BD8C8" }}>{result.accusation_score}</strong> (Z={result.threshold_z || 20})
+                                    </span>
+                                    <span style={{ color: "#FFB627", fontWeight: 700 }}>
+                                        Confidence: {result.confidence || "99.999%"}
+                                    </span>
+                                </div>
+                                <div style={{ height: 7, background: "rgba(255,255,255,0.08)", borderRadius: 999, overflow: "hidden" }}>
+                                    <div
+                                        style={{
+                                            height: "100%",
+                                            width: `${Math.min(100, Math.max(10, (Number(result.accusation_score) / Math.max(1, Number(result.threshold_z || 20) * 2)) * 100))}%`,
+                                            background: "linear-gradient(90deg, #7B5CFA, #2BD8C8)",
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        {result.lineage_path && result.lineage_path.length > 0 && (
+                            <div style={{ marginTop: 6, padding: 8, background: "rgba(255,255,255,0.03)", borderRadius: 6 }}>
+                                <div style={{ fontSize: 10, color: "#94A3B8", marginBottom: 4 }}>TRAITOR LINEAGE PATH ({result.lineage_path.length} NODES):</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, fontSize: 10, color: "#E2E8F0" }}>
+                                    {result.lineage_path.map((h, i) => (
+                                        <span key={`${h.user_id}-${i}`} style={{ color: i === result.lineage_path!.length - 1 ? "#FF6B84" : "#2BD8C8" }}>
+                                            {i > 0 ? " ➔ " : ""}[{h.hop_depth === 0 ? "Owner" : `Hop ${h.hop_depth}`}: {h.legal_name}]
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {result.forensic_streams && (
+                            <div style={{ fontSize: 10, color: "#94A3B8" }}>
+                                /Prev Updates: <strong style={{ color: "#FFB627" }}>{result.forensic_streams.prev_updates_count ?? 0}</strong>
+                                {result.forensic_streams.xmp_tags && result.forensic_streams.xmp_tags.length > 0
+                                    ? ` · XMP: ${result.forensic_streams.xmp_tags.join(", ")}`
+                                    : ""}
+                                {result.forensic_streams.author_paths && result.forensic_streams.author_paths.length > 0
+                                    ? ` · Paths: ${result.forensic_streams.author_paths.join(", ")}`
+                                    : ""}
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div

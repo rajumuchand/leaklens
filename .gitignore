@@ -21,3 +21,4 @@ tunnel.log
 .vercel
 .env*
 leaklens_tracking.db
+leaklens.db
