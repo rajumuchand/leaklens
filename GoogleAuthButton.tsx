@@ -133,7 +133,7 @@ export default function GoogleAuthButton(props: {
                         { type: "leaklens:auth-success", token: sessionToken, user: resolvedUser },
                         "*"
                     )
-                } catch {}
+                } catch { }
             }
 
             if (
@@ -149,7 +149,7 @@ export default function GoogleAuthButton(props: {
                         window.top.location.href = dest
                         return
                     }
-                } catch {}
+                } catch { }
                 window.location.href = dest
             }
         },
@@ -174,7 +174,7 @@ export default function GoogleAuthButton(props: {
                         if (onLoginSuccess) onLoginSuccess(data.user)
                     }
                 })
-                .catch(() => {})
+                .catch(() => { })
         }
 
         getFirebaseAuthClient()
@@ -184,7 +184,7 @@ export default function GoogleAuthButton(props: {
                     await completeSession(res.user)
                 }
             })
-            .catch(() => {})
+            .catch(() => { })
     }, [baseUrl, onLoginSuccess, getFirebaseAuthClient, completeSession])
 
     const handleFirebaseGoogleLogin = async () => {
@@ -227,7 +227,7 @@ export default function GoogleAuthButton(props: {
         try {
             const { auth, authMod } = await getFirebaseAuthClient()
             await authMod.signOut(auth)
-        } catch {}
+        } catch { }
         setUser(null)
     }
 

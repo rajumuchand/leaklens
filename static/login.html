@@ -8,16 +8,20 @@
     <link rel="icon" type="image/png" href="/icons/icon-192x192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=Inter:wght@500;600&display=swap" rel="stylesheet" />
     <style>
-        * { box-sizing: border-box; }
-        html, body {
+        * {
+            box-sizing: border-box;
+        }
+        html,
+        body {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
             background: #000000;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #FFFFFF;
+            font-family: 'Instrument Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: hidden;
         }
         #framerLoginFrame {
@@ -29,23 +33,43 @@
             background: #000000;
             z-index: 1;
         }
-        /* Covers Framer's button slot directly under "Your next step starts here..." */
-        .google-slot {
+        /* Desktop / Laptop layout: sits cleanly on the right beside the 3D cube */
+        .login-panel {
             position: fixed;
-            top: 438px;
-            right: 88px;
-            width: 312px;
-            min-height: 124px;
-            padding-top: 10px;
-            background: #000000;
+            top: 54%;
+            right: clamp(32px, 6vw, 88px);
+            transform: translateY(-50%);
+            width: 320px;
             z-index: 30;
             display: flex;
             flex-direction: column;
             align-items: flex-start;
+            gap: 14px;
+            padding: 20px;
+            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .login-title {
+            margin: 0;
+            font-size: 32px;
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+            color: #FFFFFF;
+        }
+        .login-subtitle {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 400;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.68);
         }
         .google-btn {
             width: 100%;
-            height: 44px;
+            height: 46px;
+            margin-top: 4px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -55,6 +79,7 @@
             border: 1px solid rgba(255, 255, 255, 0.22);
             background: #FFFFFF;
             color: #11131A;
+            font-family: 'Inter', sans-serif;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
@@ -71,17 +96,36 @@
         }
         .auth-error {
             display: none;
-            margin-top: 8px;
             font-size: 12px;
             color: #FF6B84;
             line-height: 1.4;
         }
-        @media (max-width: 720px) {
-            .google-slot {
+        /* Mobile layout: separate card anchored below the top 3D cube */
+        @media (max-width: 809.98px) {
+            .login-panel {
+                top: auto;
+                bottom: 24px;
                 left: 50%;
                 right: auto;
                 transform: translateX(-50%);
-                width: min(88vw, 312px);
+                width: calc(100vw - 32px);
+                max-width: 380px;
+                align-items: center;
+                text-align: center;
+                padding: 22px 18px;
+                border-radius: 22px;
+                background: rgba(10, 10, 16, 0.78);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
+                gap: 10px;
+            }
+            .login-title {
+                font-size: 24px;
+            }
+            .login-subtitle {
+                font-size: 13.5px;
             }
         }
     </style>
@@ -90,11 +134,13 @@
     <iframe
         id="framerLoginFrame"
         title="LeakLens Login"
-        src="https://linklenslogin.framer.website/"
+        src="https://courageous-audience-435078.framer.app/"
         allow="identity-credentials-get; clipboard-read; clipboard-write"
     ></iframe>
 
-    <div class="google-slot">
+    <div class="login-panel">
+        <h2 class="login-title">Welcome to LeakLens</h2>
+        <p class="login-subtitle">Your next step starts here. Log in or create an account with Google.</p>
         <button type="button" id="googleSignInBtn" class="google-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"/>
@@ -128,7 +174,7 @@
             measurementId: 'G-E7PW3Q5NHD'
         };
 
-        const FRAMER_LOGIN_URL = 'https://linklenslogin.framer.website/';
+        const FRAMER_LOGIN_URL = 'https://courageous-audience-435078.framer.app/';
         const CLOUD_BACKEND_ORIGIN = 'https://leaklens-tyrn.vercel.app';
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
