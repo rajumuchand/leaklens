@@ -1,5 +1,6 @@
 import hmac
 import hashlib
+import sqlite3
 import time
 import re
 import io
@@ -7,16 +8,19 @@ import os
 import json
 import base64
 import secrets
+from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import quote
 import jwt
 import requests as http_requests
-from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, Response, StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ArrayObject, DictionaryObject, NameObject, NumberObject, TextStringObject
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase import pdfmetrics
@@ -990,7 +994,251 @@ for _font_path in (
             pass
 
 
-def watermark_pdf_copy_to_copy(pdf_bytes: bytes, recipient_id: str, session_id: str) -> tuple[bytes, str]:
+# =====================================================================
+# SQLITE CANARY BEACON TRACKING & WEBSOCKET ALERT MANAGER
+# =====================================================================
+_DEFAULT_DB_PATH = (
+    "/tmp/leaklens_tracking.db"
+    if os.environ.get("VERCEL")
+    else os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaklens_tracking.db")
+)
+TRACKING_DB_PATH = os.environ.get("LEAKLENS_TRACKING_DB") or _DEFAULT_DB_PATH
+
+TRANSPARENT_1X1_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+)
+
+
+def init_tracking_db() -> None:
+    """Initializes the SQLite access_logs tracking database."""
+    conn = sqlite3.connect(TRACKING_DB_PATH)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS access_logs (
+                id INTEGER PRIMARY KEY,
+                doc_id TEXT,
+                original_recipient_id TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                timestamp TEXT,
+                alert_triggered BOOLEAN
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+init_tracking_db()
+
+
+def _log_beacon_access(
+    doc_id: str,
+    original_recipient_id: str,
+    ip_address: str,
+    user_agent: str,
+    timestamp: str,
+    alert_triggered: bool = True,
+) -> int:
+    init_tracking_db()
+    conn = sqlite3.connect(TRACKING_DB_PATH)
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO access_logs (doc_id, original_recipient_id, ip_address, user_agent, timestamp, alert_triggered)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (doc_id, original_recipient_id, ip_address, user_agent, timestamp, int(bool(alert_triggered))),
+        )
+        conn.commit()
+        return int(cur.lastrowid or 0)
+    finally:
+        conn.close()
+
+
+def _fetch_beacon_history(doc_id: str) -> list[dict]:
+    init_tracking_db()
+    conn = sqlite3.connect(TRACKING_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        if doc_id in ("all", "*"):
+            rows = conn.execute(
+                """
+                SELECT id, doc_id, original_recipient_id, ip_address, user_agent, timestamp, alert_triggered
+                FROM access_logs
+                ORDER BY timestamp DESC, id DESC
+                LIMIT 100
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, doc_id, original_recipient_id, ip_address, user_agent, timestamp, alert_triggered
+                FROM access_logs
+                WHERE doc_id = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT 100
+                """,
+                (doc_id,),
+            ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "doc_id": r["doc_id"],
+                "original_recipient_id": r["original_recipient_id"],
+                "ip_address": r["ip_address"],
+                "user_agent": r["user_agent"],
+                "timestamp": r["timestamp"],
+                "alert_triggered": bool(r["alert_triggered"]),
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+class AlertWebSocketManager:
+    """Manages active WebSocket clients subscribed to real-time Canary Beacon alerts."""
+
+    def __init__(self) -> None:
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        if websocket not in self.active_connections:
+            self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast_alert(self, payload: dict) -> None:
+        stale: list[WebSocket] = []
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(payload)
+            except Exception:
+                stale.append(connection)
+        for dead in stale:
+            self.disconnect(dead)
+
+
+alert_ws_manager = AlertWebSocketManager()
+
+
+def _extract_client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for") or ""
+    if xff.strip():
+        return xff.split(",")[0].strip()
+    x_real = (request.headers.get("x-real-ip") or "").strip()
+    if x_real:
+        return x_real
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _resolve_beacon_url(request: Optional[Request], doc_id: str, recipient_id: str) -> str:
+    safe_doc = quote(str(doc_id or "DOC-DEFAULT"), safe="")
+    safe_rec = quote(str(recipient_id or "UNKNOWN"), safe="")
+    if request is not None:
+        proto = _get_forwarded_proto(request)
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+        if host:
+            return f"{proto}://{host}/api/beacon/{safe_doc}/{safe_rec}/pixel.png"
+    base_origin = os.environ.get("LEAKLENS_PUBLIC_ORIGIN", "https://leaklens-tyrn.vercel.app").rstrip("/")
+    return f"{base_origin}/api/beacon/{safe_doc}/{safe_rec}/pixel.png"
+
+
+def inject_pdf_canary_beacon_bytes(pdf_bytes: bytes, beacon_url: str) -> bytes:
+    """
+    Injects a document-level /OpenAction URI trigger and an invisible 1x1 /Link URI
+    annotation on page 0 so opening or interacting with the PDF phones home to the Canary Beacon.
+    Uses PyMuPDF (fitz) when installed, or pure-Python pypdf as a universal fallback.
+    """
+    if not beacon_url:
+        return pdf_bytes
+
+    try:
+        import fitz  # type: ignore
+
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if len(doc) > 0:
+            page = doc[0]
+            page.insert_link({
+                "kind": fitz.LINK_URI,
+                "from": fitz.Rect(0, 0, 1, 1),
+                "uri": beacon_url,
+            })
+            # Inject document-level /OpenAction URI trigger on Catalog
+            uri_xref = doc.get_new_xref()
+            escaped_uri = beacon_url.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+            doc.update_object(uri_xref, f"<< /Type /Action /S /URI /URI ({escaped_uri}) >>")
+            doc.xref_set_key(doc.pdf_catalog(), "OpenAction", f"{uri_xref} 0 R")
+        out = doc.tobytes()
+        doc.close()
+        return out
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    writer = PdfWriter(clone_from=io.BytesIO(pdf_bytes))
+
+    uri_action = DictionaryObject({
+        NameObject("/Type"): NameObject("/Action"),
+        NameObject("/S"): NameObject("/URI"),
+        NameObject("/URI"): TextStringObject(beacon_url),
+    })
+    uri_action_ref = writer._add_object(uri_action)
+    writer._root_object[NameObject("/OpenAction")] = uri_action_ref
+
+    if len(writer.pages) > 0:
+        first_page = writer.pages[0]
+        link_annot = DictionaryObject({
+            NameObject("/Type"): NameObject("/Annot"),
+            NameObject("/Subtype"): NameObject("/Link"),
+            NameObject("/Rect"): ArrayObject([
+                NumberObject(0), NumberObject(0), NumberObject(1), NumberObject(1)
+            ]),
+            NameObject("/Border"): ArrayObject([
+                NumberObject(0), NumberObject(0), NumberObject(0)
+            ]),
+            NameObject("/F"): NumberObject(4),
+            NameObject("/A"): uri_action_ref,
+        })
+        link_ref = writer._add_object(link_annot)
+        existing_annots = first_page.get("/Annots")
+        if existing_annots is None:
+            annots_arr = ArrayObject()
+            first_page[NameObject("/Annots")] = annots_arr
+        else:
+            resolved = existing_annots.get_object()
+            if isinstance(resolved, ArrayObject):
+                annots_arr = resolved
+            else:
+                annots_arr = ArrayObject()
+                first_page[NameObject("/Annots")] = annots_arr
+        annots_arr.append(link_ref)
+
+    merged_meta = dict(reader.metadata or {})
+    merged_meta["/CanaryBeaconURL"] = beacon_url
+    writer.add_metadata(merged_meta)
+
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+
+def watermark_pdf_copy_to_copy(
+    pdf_bytes: bytes,
+    recipient_id: str,
+    session_id: str,
+    beacon_url: Optional[str] = None,
+) -> tuple[bytes, str]:
     """
     Merges an invisible zero-width watermark layer onto the original PDF pages.
     Preserves 100% of the original formatting, images, fonts, and layout while
@@ -1030,10 +1278,18 @@ def watermark_pdf_copy_to_copy(pdf_bytes: bytes, recipient_id: str, session_id: 
 
     output_stream = io.BytesIO()
     writer.write(output_stream)
-    return output_stream.getvalue(), signature
+    out_bytes = output_stream.getvalue()
+    if beacon_url:
+        out_bytes = inject_pdf_canary_beacon_bytes(out_bytes, beacon_url)
+    return out_bytes, signature
 
 
-def generate_watermarked_pdf_bytes(text: str, recipient_id: str, session_id: str) -> tuple[bytes, str]:
+def generate_watermarked_pdf_bytes(
+    text: str,
+    recipient_id: str,
+    session_id: str,
+    beacon_url: Optional[str] = None,
+) -> tuple[bytes, str]:
     """
     Creates a downloadable PDF containing:
     1. Clean visual document text (with zero-width watermarked text stream)
@@ -1099,7 +1355,10 @@ def generate_watermarked_pdf_bytes(text: str, recipient_id: str, session_id: str
 
     final_buf = io.BytesIO()
     writer.write(final_buf)
-    return final_buf.getvalue(), signature
+    out_bytes = final_buf.getvalue()
+    if beacon_url:
+        out_bytes = inject_pdf_canary_beacon_bytes(out_bytes, beacon_url)
+    return out_bytes, signature
 
 
 def inspect_pdf_bytes(pdf_bytes: bytes, user_jwt: Optional[str] = None) -> dict:
@@ -1462,13 +1721,16 @@ async def watermark_pdf_endpoint(
     persisted = _persist_watermark(
         recipient_id, session_id, signature, "pdf_extract", chunks_embedded, filename=file.filename, request=request
     )
+    beacon_url = _resolve_beacon_url(request, session_id, recipient_id)
 
     return {
         "status": "success",
         "filename": file.filename,
+        "doc_id": session_id,
         "recipient_id": recipient_id,
         "session_id": session_id,
         "signature": signature,
+        "beacon_url": beacon_url,
         "chunks_embedded": chunks_embedded,
         "watermarked_text": watermarked_text,
         "pages_processed": len(reader.pages),
@@ -1487,8 +1749,11 @@ async def download_watermarked_pdf(
         raise HTTPException(status_code=400, detail="File must be a PDF.")
 
     contents = await file.read()
+    beacon_url = _resolve_beacon_url(request, session_id, recipient_id)
     try:
-        watermarked_pdf_bytes, signature = watermark_pdf_copy_to_copy(contents, recipient_id, session_id)
+        watermarked_pdf_bytes, signature = watermark_pdf_copy_to_copy(
+            contents, recipient_id, session_id, beacon_url=beacon_url
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to watermark PDF: {str(e)}")
 
@@ -1504,6 +1769,8 @@ async def download_watermarked_pdf(
             "Content-Disposition": f'attachment; filename="watermarked_{safe_name}"',
             "X-Sentinel-Signature": signature,
             "X-Sentinel-Recipient": recipient_id,
+            "X-LeakLens-Doc-Id": session_id,
+            "X-Canary-Beacon-Url": beacon_url,
             "X-Forwarded-Proto-Resolved": proto,
             "Cache-Control": "no-store",
         },
@@ -1515,7 +1782,10 @@ def export_watermark_pdf_endpoint(req: WatermarkRequest, request: Request):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
-    pdf_bytes, signature = generate_watermarked_pdf_bytes(req.text, req.recipient_id, req.session_id)
+    beacon_url = _resolve_beacon_url(request, req.session_id, req.recipient_id)
+    pdf_bytes, signature = generate_watermarked_pdf_bytes(
+        req.text, req.recipient_id, req.session_id, beacon_url=beacon_url
+    )
     _persist_watermark(req.recipient_id, req.session_id, signature, "pdf_export", 1, request=request)
     safe_session = re.sub(r"[^a-zA-Z0-9_-]", "_", req.session_id)
     proto = _get_forwarded_proto(request)
@@ -1526,10 +1796,80 @@ def export_watermark_pdf_endpoint(req: WatermarkRequest, request: Request):
             "Content-Disposition": f'attachment; filename="LeakLens_{safe_session}.pdf"',
             "X-Sentinel-Signature": signature,
             "X-Sentinel-Recipient": req.recipient_id,
+            "X-LeakLens-Doc-Id": req.session_id,
+            "X-Canary-Beacon-Url": beacon_url,
             "X-Forwarded-Proto-Resolved": proto,
             "Cache-Control": "no-store",
         },
     )
+
+
+@app.websocket("/ws/alerts")
+async def websocket_alerts_endpoint(websocket: WebSocket):
+    """Real-time WebSocket stream for Canary Web Beacon access & leak alerts."""
+    await alert_ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        alert_ws_manager.disconnect(websocket)
+    except Exception:
+        alert_ws_manager.disconnect(websocket)
+
+
+@app.get("/api/beacon/{doc_id}/{recipient_id}/pixel.png")
+async def canary_beacon_pixel(doc_id: str, recipient_id: str, request: Request):
+    """
+    Canary Web Beacon pixel endpoint embedded in exported PDFs.
+    Logs viewer IP, User-Agent, and UTC timestamp to SQLite and pushes a real-time
+    WebSocket BEACON_TRIGGERED alert to all connected LeakLens dashboards.
+    """
+    client_ip = _extract_client_ip(request)
+    user_agent = (request.headers.get("user-agent") or "Unknown User-Agent").strip()
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    log_id = _log_beacon_access(
+        doc_id=doc_id,
+        original_recipient_id=recipient_id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        timestamp=timestamp,
+        alert_triggered=True,
+    )
+
+    alert_payload = {
+        "id": log_id,
+        "event": "BEACON_TRIGGERED",
+        "doc_id": doc_id,
+        "recipient_id": recipient_id,
+        "ip_address": client_ip,
+        "user_agent": user_agent,
+        "timestamp": timestamp,
+        "message": "Document opened from unauthorized IP!",
+    }
+    await alert_ws_manager.broadcast_alert(alert_payload)
+
+    return Response(
+        content=TRANSPARENT_1X1_PNG,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/tracking/history/{doc_id}")
+def get_tracking_history(doc_id: str):
+    """Returns logged Canary Web Beacon access events for a document ordered by timestamp DESC."""
+    records = _fetch_beacon_history(doc_id)
+    return {
+        "status": "success",
+        "doc_id": doc_id,
+        "count": len(records),
+        "records": records,
+    }
 
 
 @app.post("/api/inspect-pdf")

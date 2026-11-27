@@ -10,6 +10,8 @@ import { addPropertyControls, ControlType } from "framer"
 interface WatermarkResponse {
     status: string
     filename?: string
+    doc_id?: string
+    beacon_url?: string
     pages_processed?: number
     recipient_id: string
     session_id: string
@@ -135,6 +137,17 @@ export default function WatermarkButton(props: {
             setResult(data)
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("leaklens:watermarked", { detail: data }))
+                if (data.beacon_url) {
+                    window.dispatchEvent(
+                        new CustomEvent("leaklens:beacon_armed", {
+                            detail: {
+                                doc_id: data.doc_id || sessionId,
+                                recipient_id: recipientId,
+                                beacon_url: data.beacon_url,
+                            },
+                        })
+                    )
+                }
             }
         } catch (err: any) {
             setError(err?.message || "Failed to process PDF at /api/watermark-pdf")
@@ -165,6 +178,17 @@ export default function WatermarkButton(props: {
                 body: formData,
             })
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+            const armedDocId = resp.headers.get("X-LeakLens-Doc-Id") || sessionId
+            const armedBeaconUrl =
+                resp.headers.get("X-Canary-Beacon-Url") ||
+                `${baseUrl}/api/beacon/${encodeURIComponent(armedDocId)}/${encodeURIComponent(recipientId)}/pixel.png`
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                    new CustomEvent("leaklens:beacon_armed", {
+                        detail: { doc_id: armedDocId, recipient_id: recipientId, beacon_url: armedBeaconUrl },
+                    })
+                )
+            }
             const blob = await resp.blob()
             const downloadUrl = window.URL.createObjectURL(blob)
             const link = document.createElement("a")
@@ -193,6 +217,17 @@ export default function WatermarkButton(props: {
                 body: JSON.stringify({ recipient_id: recipientId, session_id: sessionId, text: result?.watermarked_text || text }),
             })
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+            const armedDocId = resp.headers.get("X-LeakLens-Doc-Id") || sessionId
+            const armedBeaconUrl =
+                resp.headers.get("X-Canary-Beacon-Url") ||
+                `${baseUrl}/api/beacon/${encodeURIComponent(armedDocId)}/${encodeURIComponent(recipientId)}/pixel.png`
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                    new CustomEvent("leaklens:beacon_armed", {
+                        detail: { doc_id: armedDocId, recipient_id: recipientId, beacon_url: armedBeaconUrl },
+                    })
+                )
+            }
             const blob = await resp.blob()
             const url = URL.createObjectURL(blob)
             const a = document.createElement("a")

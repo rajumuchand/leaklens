@@ -1690,6 +1690,42 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Live Telemetry & Canary Beacon Access Logs -->
+                        <div class="glass-subcard" style="margin-top:20px;">
+                            <div class="field-label" style="flex-wrap:wrap; gap:10px;">
+                                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                    <span>📡 Live Telemetry &amp; Access Logs</span>
+                                    <span id="beaconWsBadge" class="mono-badge gold">WS /ws/alerts STANDBY</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                    <input id="trackingDocFilter" class="glass-input" type="text" value="all" placeholder="Document ID or 'all'" style="padding:5px 10px; font-size:11.5px; width:180px;" />
+                                    <button type="button" class="lt-pill sm secondary" onclick="refreshBeaconHistory()">Refresh Logs</button>
+                                    <button type="button" class="lt-pill sm danger" onclick="simulateCanaryBeacon()">Simulate Beacon Hit</button>
+                                </div>
+                            </div>
+                            <div style="overflow-x:auto;">
+                                <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:11.5px;">
+                                    <thead>
+                                        <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-muted); text-align:left;">
+                                            <th style="padding:8px 10px;">Timestamp</th>
+                                            <th style="padding:8px 10px;">Document ID</th>
+                                            <th style="padding:8px 10px;">Original Recipient</th>
+                                            <th style="padding:8px 10px;">Client IP</th>
+                                            <th style="padding:8px 10px;">Device User-Agent</th>
+                                            <th style="padding:8px 10px;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="beaconTelemetryBody">
+                                        <tr>
+                                            <td colspan="6" style="padding:14px 10px; text-align:center; color:var(--text-muted);">
+                                                No Canary Beacon hits recorded yet. Export a PDF or click Simulate Beacon Hit.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- ==================== TAB 3: OFFLINE DRM ENFORCER ==================== -->
@@ -3334,6 +3370,94 @@
            3. SENTINELTRACE API & CONSOLE LOGIC (100% BACKEND PRESERVED)
            ============================================================== */
         let webhookTimer = null;
+        let beaconLiveAlerts = [];
+        function renderBeaconTelemetryRows(records) {
+            const tbody = document.getElementById('beaconTelemetryBody');
+            if (!tbody) return;
+            if (!records || !records.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="padding:14px 10px; text-align:center; color:var(--text-muted);">No Canary Beacon hits recorded yet. Export a PDF or click Simulate Beacon Hit.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = records.map((r) => `
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                    <td style="padding:8px 10px; white-space:nowrap;">${new Date(r.timestamp).toLocaleString()}</td>
+                    <td style="padding:8px 10px; color:#9A82FF;">${String(r.doc_id || '').replace(/</g, '&lt;')}</td>
+                    <td style="padding:8px 10px; color:var(--teal);">${String(r.original_recipient_id || r.recipient_id || '—').replace(/</g, '&lt;')}</td>
+                    <td style="padding:8px 10px; color:var(--gold);">${String(r.ip_address || '').replace(/</g, '&lt;')}</td>
+                    <td style="padding:8px 10px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${String(r.user_agent || '').replace(/</g, '&lt;')}</td>
+                    <td style="padding:8px 10px; color:#FF6B84; font-weight:700;">${r.alert_triggered === false ? 'LOGGED' : '🚨 ALERT'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function refreshBeaconHistory() {
+            const docVal = (document.getElementById('trackingDocFilter')?.value || 'all').trim() || 'all';
+            try {
+                const resp = await apiFetch(`/api/tracking/history/${encodeURIComponent(docVal)}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (Array.isArray(data?.records)) renderBeaconTelemetryRows(data.records);
+            } catch {}
+        }
+
+        async function simulateCanaryBeacon() {
+            const docVal = (document.getElementById('trackingDocFilter')?.value || '').trim();
+            const docId = (docVal && docVal !== 'all') ? docVal : ((document.getElementById('wmSession')?.value || '').trim() || 'SES-SYNAPSE-2026');
+            const recId = (document.getElementById('wmRecipient')?.value || '').trim() || 'USR-8492 (Alice)';
+            try {
+                await fetch(resolveApiUrl(`/api/beacon/${encodeURIComponent(docId)}/${encodeURIComponent(recId)}/pixel.png?t=${Date.now()}`), {
+                    cache: 'no-store'
+                });
+                await refreshBeaconHistory();
+            } catch {}
+        }
+
+        (function initBeaconWebSocket() {
+            const badge = document.getElementById('beaconWsBadge');
+            const baseHttp = resolveApiUrl('/ws/alerts').startsWith('/')
+                ? window.location.origin
+                : CLOUD_BACKEND_ORIGIN;
+            const wsUrl = `${baseHttp.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:')}/ws/alerts`;
+            let ws = null;
+            function connect() {
+                try {
+                    ws = new WebSocket(wsUrl);
+                    ws.onopen = () => {
+                        if (badge) {
+                            badge.textContent = '● WS /ws/alerts CONNECTED';
+                            badge.className = 'mono-badge teal';
+                        }
+                    };
+                    ws.onmessage = (evt) => {
+                        try {
+                            const msg = JSON.parse(evt.data);
+                            if (msg?.event === 'BEACON_TRIGGERED') {
+                                beaconLiveAlerts.unshift(msg);
+                                const toast = document.getElementById('webhookToast');
+                                const toastBody = document.getElementById('webhookToastBody');
+                                if (toast && toastBody) {
+                                    toastBody.textContent = `🚨 Document Leak/Access Alert | Doc: ${msg.doc_id} | Recipient: ${msg.recipient_id} | IP: ${msg.ip_address} | UA: ${msg.user_agent} | ${new Date(msg.timestamp).toLocaleString()}`;
+                                    toast.classList.add('show');
+                                    clearTimeout(webhookTimer);
+                                    webhookTimer = setTimeout(() => toast.classList.remove('show'), 9000);
+                                }
+                                refreshBeaconHistory();
+                            }
+                        } catch {}
+                    };
+                    ws.onclose = () => {
+                        if (badge) {
+                            badge.textContent = '○ WS /ws/alerts STANDBY';
+                            badge.className = 'mono-badge gold';
+                        }
+                        setTimeout(connect, 5000);
+                    };
+                } catch {}
+            }
+            connect();
+            refreshBeaconHistory();
+        })();
+
         function triggerWebhookAlert(recipientId, sessionId, inlineId) {
             const msg = `🚨 CRITICAL INCIDENT: Forensic match confirmed for Recipient ${recipientId} | Session ${sessionId}.`;
             const toast = document.getElementById('webhookToast');

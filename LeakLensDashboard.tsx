@@ -35,6 +35,19 @@ interface InspectResponse {
     error?: string
 }
 
+interface BeaconAlert {
+    id?: number
+    event?: string
+    doc_id: string
+    recipient_id?: string
+    original_recipient_id?: string
+    ip_address: string
+    user_agent: string
+    timestamp: string
+    message?: string
+    alert_triggered?: boolean
+}
+
 interface LeaseResponse {
     access_allowed: boolean
     token_verified?: boolean
@@ -357,6 +370,12 @@ export default function LeakLensDashboard(props: {
 
     const [activeTab, setActiveTab] = React.useState<"watermark" | "inspector" | "drm" | "stress">("watermark")
     const [webhookAlert, setWebhookAlert] = React.useState<string | null>(null)
+    const [liveAlerts, setLiveAlerts] = React.useState<BeaconAlert[]>([])
+    const [activeBeaconToast, setActiveBeaconToast] = React.useState<BeaconAlert | null>(null)
+    const [wsConnected, setWsConnected] = React.useState(false)
+    const [trackingDocId, setTrackingDocId] = React.useState("SES-SYNAPSE-2026")
+    const [accessHistory, setAccessHistory] = React.useState<BeaconAlert[]>([])
+    const [isLoadingHistory, setIsLoadingHistory] = React.useState(false)
 
     // --- TAB 4: JUDGE STRESS TEST ("TRY TO BREAK IT") STATE ---
     const STRESS_MEMO =
@@ -575,6 +594,137 @@ export default function LeakLensDashboard(props: {
         }
     }, [clientOnly, normalizedBackendUrl, buildApiHeaders])
 
+    // --- CANARY WEB BEACON: TRACKING HISTORY & REAL-TIME WEBSOCKET ALERTS ---
+    const resolveEffectiveBackendBase = React.useCallback(() => {
+        if (normalizedBackendUrl) return normalizedBackendUrl
+        if (typeof window !== "undefined") return window.location.origin
+        return DEFAULT_REMOTE_BACKEND
+    }, [normalizedBackendUrl])
+
+    const fetchTrackingHistory = React.useCallback(
+        async (docIdOverride?: string) => {
+            const targetDoc = (docIdOverride ?? trackingDocId).trim() || "all"
+            setIsLoadingHistory(true)
+            try {
+                const base = resolveEffectiveBackendBase()
+                const resp = await fetch(`${base}/api/tracking/history/${encodeURIComponent(targetDoc)}`, {
+                    headers: buildApiHeaders(),
+                })
+                if (resp.ok) {
+                    const data = await resp.json()
+                    if (Array.isArray(data?.records)) {
+                        setAccessHistory(data.records)
+                    }
+                }
+            } catch {
+                // Keep existing logs when offline
+            } finally {
+                setIsLoadingHistory(false)
+            }
+        },
+        [trackingDocId, resolveEffectiveBackendBase, buildApiHeaders]
+    )
+
+    const handleTriggerTestBeacon = React.useCallback(async () => {
+        const doc = trackingDocId.trim() || sessionId.trim() || "SES-SYNAPSE-2026"
+        const rec = recipientId.trim() || "Alice Smith (USR-8492)"
+        const base = resolveEffectiveBackendBase()
+        try {
+            await fetch(
+                `${base}/api/beacon/${encodeURIComponent(doc)}/${encodeURIComponent(rec)}/pixel.png?t=${Date.now()}`,
+                { cache: "no-store", headers: buildApiHeaders() }
+            )
+            fetchTrackingHistory(doc)
+        } catch {
+            // Ignore network failures offline
+        }
+    }, [trackingDocId, sessionId, recipientId, resolveEffectiveBackendBase, buildApiHeaders, fetchTrackingHistory])
+
+    React.useEffect(() => {
+        if (typeof window === "undefined") return
+        let isDisposed = false
+        let ws: WebSocket | null = null
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+        const baseHttp = resolveEffectiveBackendBase()
+        const isLocal8000 = baseHttp.includes("localhost:8000") || baseHttp.includes("127.0.0.1:8000")
+        const wsBase = isLocal8000
+            ? "ws://localhost:8000"
+            : baseHttp.replace(/^https:/i, "wss:").replace(/^http:/i, "ws:")
+        const wsUrl = `${wsBase.replace(/\/+$/, "")}/ws/alerts`
+
+        const connectSocket = () => {
+            if (isDisposed) return
+            try {
+                ws = new WebSocket(wsUrl)
+                ws.onopen = () => {
+                    if (!isDisposed) setWsConnected(true)
+                }
+                ws.onmessage = (event) => {
+                    try {
+                        const msg: BeaconAlert = JSON.parse(event.data)
+                        if (msg && msg.event === "BEACON_TRIGGERED") {
+                            setLiveAlerts((prev) => [msg, ...prev.slice(0, 49)])
+                            setActiveBeaconToast(msg)
+                            setAccessHistory((prev) => {
+                                const deduped = prev.filter(
+                                    (r) => !(r.timestamp === msg.timestamp && r.doc_id === msg.doc_id && r.ip_address === msg.ip_address)
+                                )
+                                return [
+                                    {
+                                        ...msg,
+                                        original_recipient_id: msg.recipient_id || msg.original_recipient_id,
+                                        alert_triggered: true,
+                                    },
+                                    ...deduped,
+                                ]
+                            })
+                        }
+                    } catch {
+                        // Ignore malformed frames
+                    }
+                }
+                ws.onerror = () => {
+                    if (!isDisposed) setWsConnected(false)
+                }
+                ws.onclose = () => {
+                    if (!isDisposed) {
+                        setWsConnected(false)
+                        reconnectTimer = setTimeout(connectSocket, 4000)
+                    }
+                }
+            } catch {
+                setWsConnected(false)
+            }
+        }
+
+        connectSocket()
+
+        const onBeaconArmed = (evt: Event) => {
+            const detail = (evt as CustomEvent).detail
+            if (detail?.doc_id) {
+                setTrackingDocId(detail.doc_id)
+                fetchTrackingHistory(detail.doc_id)
+            }
+        }
+        window.addEventListener("leaklens:beacon_armed", onBeaconArmed)
+
+        return () => {
+            isDisposed = true
+            if (reconnectTimer) clearTimeout(reconnectTimer)
+            window.removeEventListener("leaklens:beacon_armed", onBeaconArmed)
+            if (ws) {
+                try {
+                    ws.close()
+                } catch {}
+            }
+        }
+    }, [resolveEffectiveBackendBase, fetchTrackingHistory])
+
+    React.useEffect(() => {
+        fetchTrackingHistory(trackingDocId)
+    }, [trackingDocId, fetchTrackingHistory])
+
     // --- TAB 1: CALL /api/watermark (with offline client-side fallback) ---
     const handleGenerateWatermark = async () => {
         setIsWatermarking(true)
@@ -655,6 +805,8 @@ export default function LeakLensDashboard(props: {
                 body: formData,
             })
             if (!resp.ok) throw new Error("offline")
+            const armedDocId = resp.headers.get("X-LeakLens-Doc-Id") || sessionId
+            setTrackingDocId(armedDocId)
             blob = await resp.blob()
         } catch {
             const buf = await pdfFile.arrayBuffer()
@@ -689,6 +841,8 @@ export default function LeakLensDashboard(props: {
                 }),
             })
             if (!resp.ok) throw new Error("offline")
+            const armedDocId = resp.headers.get("X-LeakLens-Doc-Id") || sessionId
+            setTrackingDocId(armedDocId)
             blob = await resp.blob()
         } catch {
             const sig = computeOfflineSig(`${recipientId}|${sessionId}`)
@@ -1349,6 +1503,69 @@ export default function LeakLensDashboard(props: {
 
             {/* Tab Body */}
             <div style={{ padding: 28 }}>
+                {/* FLOATING CANARY BEACON WEBSOCKET ALERT TOAST / MODAL */}
+                {activeBeaconToast && (
+                    <div
+                        role="alert"
+                        style={{
+                            position: "fixed",
+                            top: 24,
+                            right: 24,
+                            zIndex: 10050,
+                            width: "min(92vw, 430px)",
+                            padding: "16px 18px",
+                            backgroundColor: "rgba(22, 10, 16, 0.96)",
+                            border: "1px solid rgba(255, 59, 92, 0.72)",
+                            borderRadius: 12,
+                            boxShadow: "0 20px 60px rgba(0, 0, 0, 0.85), 0 0 36px rgba(255, 59, 92, 0.32)",
+                            backdropFilter: "blur(16px)",
+                            color: "#FFE4E9",
+                        }}
+                    >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13, color: "#FF6B84" }}>
+                                🚨 Document Leak/Access Alert
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setActiveBeaconToast(null)}
+                                style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#fca5a5",
+                                    cursor: "pointer",
+                                    fontSize: 15,
+                                    fontFamily: "monospace",
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div style={{ fontSize: 12, color: "#FECACA", marginBottom: 8 }}>
+                            {activeBeaconToast.message || "Document opened from unauthorized IP!"}
+                        </div>
+                        <div style={{ display: "grid", gap: 4, fontFamily: "monospace", fontSize: 11, color: "#E2E8F0" }}>
+                            <div>
+                                <strong style={{ color: "#94A3B8" }}>Document ID:</strong> {activeBeaconToast.doc_id}
+                            </div>
+                            <div>
+                                <strong style={{ color: "#94A3B8" }}>Original Recipient:</strong>{" "}
+                                {activeBeaconToast.recipient_id || activeBeaconToast.original_recipient_id || "—"}
+                            </div>
+                            <div>
+                                <strong style={{ color: "#94A3B8" }}>Client IP:</strong> {activeBeaconToast.ip_address}
+                            </div>
+                            <div>
+                                <strong style={{ color: "#94A3B8" }}>Timestamp:</strong>{" "}
+                                {new Date(activeBeaconToast.timestamp).toLocaleString()}
+                            </div>
+                            <div style={{ wordBreak: "break-word" }}>
+                                <strong style={{ color: "#94A3B8" }}>User-Agent:</strong> {activeBeaconToast.user_agent}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* REAL-TIME WEBHOOK LEAK ALERT BANNER */}
                 {webhookAlert && (
                     <div
@@ -1957,7 +2174,164 @@ export default function LeakLensDashboard(props: {
                                 </div>
                             )}
                         </div>
+
+                    {/* LIVE TELEMETRY & ACCESS LOGS TABLE (CANARY BEACON + WEBSOCKETS) */}
+                    <div
+                        style={{
+                            gridColumn: "1 / -1",
+                            marginTop: 8,
+                            padding: 20,
+                            backgroundColor: "rgba(255, 255, 255, 0.02)",
+                            border: "1px solid rgba(255, 255, 255, 0.08)",
+                            borderRadius: 12,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 14,
+                        }}
+                    >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: "#F3F2F8" }}>
+                                    📡 Live Telemetry &amp; Access Logs
+                                </span>
+                                <span
+                                    style={{
+                                        fontSize: 10,
+                                        fontFamily: "monospace",
+                                        padding: "3px 8px",
+                                        borderRadius: 999,
+                                        backgroundColor: wsConnected ? "rgba(43, 216, 200, 0.14)" : "rgba(255, 182, 39, 0.12)",
+                                        border: `1px solid ${wsConnected ? "rgba(43, 216, 200, 0.4)" : "rgba(255, 182, 39, 0.35)"}`,
+                                        color: wsConnected ? "#2BD8C8" : "#FFB627",
+                                    }}
+                                >
+                                    {wsConnected ? "● WS /ws/alerts CONNECTED" : "○ WS /ws/alerts STANDBY"}
+                                </span>
+                                {liveAlerts.length > 0 && (
+                                    <span
+                                        style={{
+                                            fontSize: 10,
+                                            fontFamily: "monospace",
+                                            padding: "3px 8px",
+                                            borderRadius: 999,
+                                            backgroundColor: "rgba(255, 59, 92, 0.14)",
+                                            border: "1px solid rgba(255, 59, 92, 0.45)",
+                                            color: "#FF8DA1",
+                                        }}
+                                    >
+                                        {liveAlerts.length} LIVE ALERT{liveAlerts.length === 1 ? "" : "S"}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <input
+                                    type="text"
+                                    value={trackingDocId}
+                                    onChange={(e) => setTrackingDocId(e.target.value)}
+                                    placeholder="Document ID (or 'all')"
+                                    style={{ ...inputStyle, width: 190, padding: "6px 10px", fontSize: 11, fontFamily: "monospace" }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setTrackingDocId("all")}
+                                    style={{
+                                        padding: "6px 10px",
+                                        borderRadius: 6,
+                                        border: "1px solid rgba(255,255,255,0.14)",
+                                        backgroundColor: "rgba(255,255,255,0.05)",
+                                        color: "#cbd5e1",
+                                        fontSize: 11,
+                                        fontFamily: "monospace",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    All Docs
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => fetchTrackingHistory(trackingDocId)}
+                                    style={{
+                                        padding: "6px 12px",
+                                        borderRadius: 6,
+                                        border: "1px solid rgba(43, 216, 200, 0.4)",
+                                        backgroundColor: "rgba(43, 216, 200, 0.12)",
+                                        color: "#2BD8C8",
+                                        fontSize: 11,
+                                        fontFamily: "monospace",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    {isLoadingHistory ? "Refreshing..." : "Refresh Logs"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleTriggerTestBeacon}
+                                    style={{
+                                        padding: "6px 12px",
+                                        borderRadius: 6,
+                                        border: "1px solid rgba(255, 59, 92, 0.45)",
+                                        backgroundColor: "rgba(255, 59, 92, 0.14)",
+                                        color: "#FF8DA1",
+                                        fontSize: 11,
+                                        fontFamily: "monospace",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    Simulate Beacon Hit
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "monospace", fontSize: 11.5 }}>
+                                <thead>
+                                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.12)", color: "#94a3b8", textAlign: "left" }}>
+                                        <th style={{ padding: "8px 10px" }}>Timestamp</th>
+                                        <th style={{ padding: "8px 10px" }}>Document ID</th>
+                                        <th style={{ padding: "8px 10px" }}>Original Recipient</th>
+                                        <th style={{ padding: "8px 10px" }}>Client IP</th>
+                                        <th style={{ padding: "8px 10px" }}>Device User-Agent</th>
+                                        <th style={{ padding: "8px 10px" }}>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {accessHistory.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={6} style={{ padding: "16px 10px", textAlign: "center", color: "#64748b" }}>
+                                                No Canary Beacon hits logged yet for &quot;{trackingDocId || "all"}&quot;. Export a PDF or click &quot;Simulate Beacon Hit&quot;.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        accessHistory.map((log, idx) => (
+                                            <tr
+                                                key={`${log.id ?? idx}-${log.timestamp}`}
+                                                style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", color: "#e2e8f0" }}
+                                            >
+                                                <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
+                                                    {new Date(log.timestamp).toLocaleString()}
+                                                </td>
+                                                <td style={{ padding: "8px 10px", color: "#9A82FF" }}>{log.doc_id}</td>
+                                                <td style={{ padding: "8px 10px", color: "#2BD8C8" }}>
+                                                    {log.original_recipient_id || log.recipient_id || "—"}
+                                                </td>
+                                                <td style={{ padding: "8px 10px", color: "#FFB627" }}>{log.ip_address}</td>
+                                                <td style={{ padding: "8px 10px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                    {log.user_agent}
+                                                </td>
+                                                <td style={{ padding: "8px 10px" }}>
+                                                    <span style={{ color: "#FF6B84", fontWeight: 700 }}>
+                                                        {log.alert_triggered === false ? "LOGGED" : "🚨 ALERT"}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
+                </div>
                 )}
 
                 {/* ============================================================== */}
