@@ -1539,6 +1539,21 @@
                         <div id="firestoreAuditSummaryGrid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; font-family:var(--font-mono); font-size:11.5px;"></div>
                     </div>
 
+                    <!-- Prominent WhatsApp Link Generator Bar -->
+                    <div id="whatsappGeneratorBar" style="padding:14px 24px; border-bottom:1px solid rgba(43,216,200,0.22); background:linear-gradient(90deg, rgba(43,216,200,0.08), rgba(123,92,250,0.08)); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                        <div style="display:flex; flex-direction:column; gap:4px; flex:1 1 320px; min-width:260px;">
+                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <span style="font-size:12.5px; font-weight:700; color:var(--teal);">💬 WhatsApp Link Generator</span>
+                                <span id="waGeneratorMeta" style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">Tracking URL auto-binds your verified email &amp; Doc ID</span>
+                            </div>
+                            <input id="topShareLinkPreview" class="glass-input" type="text" readonly onclick="this.select()" style="padding:6px 10px; font-family:var(--font-mono); font-size:11.5px; background:rgba(3,4,8,0.72);" />
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <button type="button" id="copyWaTrackingBtn" class="lt-pill sm teal" onclick="shareProtectedLink('copy')" style="font-weight:700; padding:10px 16px;">📋 Copy WhatsApp Tracking Link</button>
+                            <button type="button" class="lt-pill sm violet" onclick="shareProtectedLink('whatsapp')">💬 Share on WhatsApp</button>
+                        </div>
+                    </div>
+
                     <!-- ==================== TAB 1: WATERMARK GENERATOR ==================== -->
                     <div id="tab-watermark" class="tab-panel active">
                         <div class="console-grid-2">
@@ -1546,7 +1561,7 @@
                                 <div class="field-row">
                                     <div class="field-group">
                                         <label class="field-label" for="wmRecipient">Owner / Sharer Identity</label>
-                                        <input id="wmRecipient" class="glass-input" type="text" value="Operator" />
+                                        <input id="wmRecipient" class="glass-input" type="text" value="Operator" oninput="updateShareLinkPreview()" />
                                     </div>
                                     <div class="field-group">
                                         <label class="field-label" for="wmSession">Document ID</label>
@@ -1607,7 +1622,7 @@
                                     </div>
                                     <input id="shareLinkPreview" class="glass-input" type="text" readonly style="font-family:var(--font-mono); font-size:11.5px;" />
                                     <div class="btn-row">
-                                        <button type="button" class="lt-pill sm secondary" onclick="shareProtectedLink('copy')">📋 Copy Viewing Link</button>
+                                        <button type="button" class="lt-pill sm secondary" onclick="shareProtectedLink('copy')">📋 Copy WhatsApp Tracking Link</button>
                                         <button type="button" class="lt-pill sm teal" onclick="shareProtectedLink('whatsapp')">💬 Share on WhatsApp</button>
                                         <button type="button" class="lt-pill sm gold" onclick="shareProtectedLink('email')">✉️ Share via Email</button>
                                     </div>
@@ -1731,12 +1746,12 @@
                             <div class="field-label" style="flex-wrap:wrap; gap:10px;">
                                 <span>🕸 Multi-Hop Lineage Chain Tree (Real Multi-User Tracking)</span>
                                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                    <input id="lineageDocInput" class="glass-input" type="text" value="DOC-2026-Q4" style="padding:5px 10px; font-size:11.5px; width:150px;" />
+                                    <input id="lineageDocInput" class="glass-input" type="text" value="DOC-2026-Q4" oninput="syncDocInputsFromLineage()" style="padding:5px 10px; font-size:11.5px; width:150px;" />
                                     <input id="lineageParentInput" class="glass-input" type="text" placeholder="Parent Email / Owner" style="padding:5px 8px; font-size:11.5px; width:150px;" />
                                     <input id="lineageChildInput" class="glass-input" type="text" placeholder="Recipient Email / Name" style="padding:5px 8px; font-size:11.5px; width:150px;" />
                                     <button type="button" class="lt-pill sm violet" onclick="recordDownstreamHop()">+ Record Hop</button>
                                     <button type="button" class="lt-pill sm secondary" onclick="refreshLineageChain()">Trace Graph</button>
-                                    <button type="button" class="lt-pill sm teal" onclick="shareProtectedLink('whatsapp')">💬 Share WhatsApp Link</button>
+                                    <button type="button" class="lt-pill sm teal" onclick="shareProtectedLink('copy')">📋 Copy WhatsApp Tracking Link</button>
                                 </div>
                             </div>
                             <div id="lineageChainStrip" style="display:flex; align-items:center; gap:8px; overflow-x:auto; padding:8px 2px; font-family:var(--font-mono); font-size:11px;"></div>
@@ -3507,6 +3522,14 @@
             const linDoc = document.getElementById('lineageDocInput');
             if (linDoc) linDoc.value = docVal;
             updateShareLinkPreview();
+            window.__leaklensWatchLineageDoc?.(docVal);
+        }
+
+        function syncDocInputsFromLineage() {
+            const docVal = (document.getElementById('lineageDocInput')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
+            const wmSess = document.getElementById('wmSession');
+            if (wmSess) wmSess.value = docVal;
+            updateShareLinkPreview();
         }
 
         function getActiveOwnerIdentity() {
@@ -3516,24 +3539,65 @@
         }
 
         function updateShareLinkPreview() {
-            const docId = (document.getElementById('wmSession')?.value || document.getElementById('lineageDocInput')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
+            const docId = (document.getElementById('lineageDocInput')?.value || document.getElementById('wmSession')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
             const { email } = getActiveOwnerIdentity();
-            const base = resolveApiUrl('').startsWith('http') ? CLOUD_BACKEND_ORIGIN : window.location.origin;
+            const base = (window.location.protocol.startsWith('http') && !window.location.hostname.includes('framer'))
+                ? window.location.origin
+                : CLOUD_BACKEND_ORIGIN;
             const url = `${base}/view/${encodeURIComponent(docId)}?ref=${encodeURIComponent(email)}`;
             const inp = document.getElementById('shareLinkPreview');
             if (inp) inp.value = url;
+            const topInp = document.getElementById('topShareLinkPreview');
+            if (topInp) topInp.value = url;
+            const meta = document.getElementById('waGeneratorMeta');
+            if (meta) meta.textContent = `Doc: ${docId} • Sharer: ${email}`;
             return url;
         }
 
         async function shareProtectedLink(channel) {
-            const docId = (document.getElementById('wmSession')?.value || document.getElementById('lineageDocInput')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
+            const docId = (document.getElementById('lineageDocInput')?.value || document.getElementById('wmSession')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
             const content = (document.getElementById('wmOutput')?.value || document.getElementById('wmText')?.value || OFFLINE_CONFIDENTIAL_DOCS[0].text).trim();
             const { email, name } = getActiveOwnerIdentity();
             const statusEl = document.getElementById('shareLinkStatus');
 
-            let viewUrl = updateShareLinkPreview();
-            let waUrl = `https://wa.me/?text=${encodeURIComponent(`Confidential LeakLens document (${docId}): ${viewUrl}`)}`;
-            let mailUrl = `mailto:?subject=${encodeURIComponent(`Confidential Document: ${docId}`)}&body=${encodeURIComponent(viewUrl)}`;
+            const viewUrl = updateShareLinkPreview();
+            const shareText = `Confidential LeakLens document (${docId}) shared by ${name}. Verify your identity to view: ${viewUrl}`;
+            const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+            const mailUrl = `mailto:?subject=${encodeURIComponent(`Confidential Document: ${docId}`)}&body=${encodeURIComponent(shareText)}`;
+
+            if (channel === 'copy') {
+                let copiedOk = false;
+                try {
+                    if (navigator.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(viewUrl);
+                        copiedOk = true;
+                    }
+                } catch {}
+                if (!copiedOk) {
+                    try {
+                        const ta = document.createElement('textarea');
+                        ta.value = viewUrl;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        copiedOk = document.execCommand('copy');
+                        ta.remove();
+                    } catch {}
+                }
+                const btn = document.getElementById('copyWaTrackingBtn');
+                if (btn) {
+                    btn.textContent = '✓ Copied WhatsApp Tracking Link!';
+                    setTimeout(() => { btn.textContent = '📋 Copy WhatsApp Tracking Link'; }, 2500);
+                }
+                if (statusEl) statusEl.textContent = `✓ Copied WhatsApp Tracking Link: ${viewUrl}`;
+            } else if (channel === 'whatsapp') {
+                window.open(waUrl, '_blank', 'noopener,noreferrer');
+                if (statusEl) statusEl.textContent = `✓ WhatsApp share prepared for ${docId}. Recipient opens will append automatically.`;
+            } else if (channel === 'email') {
+                window.location.href = mailUrl;
+                if (statusEl) statusEl.textContent = `✓ Email share prepared for ${docId}.`;
+            }
 
             try {
                 const resp = await apiFetch('/api/share/create-link', {
@@ -3549,12 +3613,6 @@
                     })
                 });
                 if (resp.ok) {
-                    const data = await resp.json();
-                    if (data.view_url) viewUrl = data.view_url;
-                    if (data.whatsapp_url) waUrl = data.whatsapp_url;
-                    if (data.mailto_url) mailUrl = data.mailto_url;
-                    const inp = document.getElementById('shareLinkPreview');
-                    if (inp) inp.value = viewUrl;
                     refreshLineageChain();
                 }
                 const hasRoot = (window.__latestLineageChain || []).some((n, i) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? i) === 0);
@@ -3568,17 +3626,6 @@
                     }).catch(() => {});
                 }
             } catch {}
-
-            if (channel === 'copy') {
-                await navigator.clipboard?.writeText(viewUrl).catch(() => {});
-                if (statusEl) statusEl.textContent = `✓ Tracked viewing link copied! Root owner: ${name} (${email})`;
-            } else if (channel === 'whatsapp') {
-                window.open(waUrl, '_blank', 'noopener,noreferrer');
-                if (statusEl) statusEl.textContent = `✓ WhatsApp share prepared for ${docId}. Recipient opens will append automatically.`;
-            } else if (channel === 'email') {
-                window.location.href = mailUrl;
-                if (statusEl) statusEl.textContent = `✓ Email share prepared for ${docId}.`;
-            }
         }
 
         function handlePdfDragOver(e) { e.preventDefault(); document.getElementById('pdfDropZone').classList.add('dragover'); }
@@ -4465,9 +4512,8 @@
                 if (wmRec && user.email) wmRec.value = user.name ? `${user.name} (${user.email})` : user.email;
                 const linPar = document.getElementById('lineageParentInput');
                 if (linPar && user.email && !linPar.value) linPar.value = user.email;
-                updateShareLinkPreview();
                 refreshLineageChain();
-        updateShareLinkPreview();
+                updateShareLinkPreview();
             } else {
                 if (prof) prof.style.display = 'none';
                 if (sum) sum.style.display = 'flex';
@@ -4480,6 +4526,7 @@
             if (!authedUser) return;
             const wmRec = document.getElementById('wmRecipient');
             if (wmRec) wmRec.value = `${authedUser.name} (${authedUser.email})`;
+            updateShareLinkPreview();
         }
 
         const FIREBASE_LOGIN_ORIGIN = 'https://leaklens-77637.web.app';

@@ -829,16 +829,63 @@ export default function LeakLensDashboard(props: {
         return () => unsubscribe()
     }, [activeDocId, trackingDocId, fetchLineageGraph, fetchTrackingHistory])
 
+    const currentUserEmail = authUser?.email || recipientId.trim() || "owner@leaklens.local"
+    const resolveWhatsAppTrackingUrl = React.useCallback(
+        (docOverride?: string) => {
+            const doc = (docOverride ?? activeDocId ?? sessionId ?? "DOC-2026-Q4").trim() || "DOC-2026-Q4"
+            let base = resolveEffectiveBackendBase()
+            if (typeof window !== "undefined" && window.location.protocol.startsWith("http") && !window.location.hostname.includes("framer")) {
+                base = window.location.origin
+            }
+            return `${base}/view/${encodeURIComponent(doc)}?ref=${encodeURIComponent(currentUserEmail)}`
+        },
+        [activeDocId, sessionId, currentUserEmail, resolveEffectiveBackendBase]
+    )
+    const [waLinkCopied, setWaLinkCopied] = React.useState(false)
+
     const handleShareProtectedLink = React.useCallback(
         async (channel: "copy" | "whatsapp" | "email") => {
-            const doc = (sessionId || activeDocId || "DOC-2026-Q4").trim()
-            const ownerEmail = authUser?.email || recipientId || "owner@leaklens.local"
+            const doc = (activeDocId || sessionId || "DOC-2026-Q4").trim() || "DOC-2026-Q4"
+            const ownerEmail = currentUserEmail
             const ownerName = authUser?.name || (ownerEmail.includes("@") ? ownerEmail.split("@")[0] : ownerEmail)
             const content = watermarkResult?.watermarked_text || textInput
             const base = resolveEffectiveBackendBase()
-            let viewUrl = `${base}/view/${encodeURIComponent(doc)}?ref=${encodeURIComponent(ownerEmail)}`
-            let waUrl = `https://wa.me/?text=${encodeURIComponent(`Confidential LeakLens document (${doc}): ${viewUrl}`)}`
-            let mailUrl = `mailto:?subject=${encodeURIComponent(`Confidential Document: ${doc}`)}&body=${encodeURIComponent(viewUrl)}`
+            const viewUrl = resolveWhatsAppTrackingUrl(doc)
+            const waText = `Confidential LeakLens document (${doc}) shared by ${ownerName}. Verify your identity to view: ${viewUrl}`
+            const waUrl = `https://wa.me/?text=${encodeURIComponent(waText)}`
+            const mailUrl = `mailto:?subject=${encodeURIComponent(`Confidential Document: ${doc}`)}&body=${encodeURIComponent(waText)}`
+
+            if (channel === "copy") {
+                let copiedOk = false
+                try {
+                    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(viewUrl)
+                        copiedOk = true
+                    }
+                } catch {}
+                if (!copiedOk && typeof document !== "undefined") {
+                    try {
+                        const ta = document.createElement("textarea")
+                        ta.value = viewUrl
+                        ta.style.position = "fixed"
+                        ta.style.opacity = "0"
+                        document.body.appendChild(ta)
+                        ta.select()
+                        copiedOk = document.execCommand("copy")
+                        ta.remove()
+                    } catch {}
+                }
+                setWaLinkCopied(true)
+                setTimeout(() => setWaLinkCopied(false), 2500)
+                setShareStatusMsg(`✓ Copied WhatsApp Tracking Link: ${viewUrl}`)
+            } else if (channel === "whatsapp") {
+                window.open(waUrl, "_blank", "noopener,noreferrer")
+                setShareStatusMsg(`✓ WhatsApp link ready for ${doc} (downstream opens auto-track).`)
+            } else {
+                window.location.href = mailUrl
+                setShareStatusMsg(`✓ Email draft ready for ${doc}.`)
+            }
+
             try {
                 const resp = await fetch(`${base}/api/share/create-link`, {
                     method: "POST",
@@ -852,10 +899,6 @@ export default function LeakLensDashboard(props: {
                     }),
                 })
                 if (resp.ok) {
-                    const data = await resp.json()
-                    if (data.view_url) viewUrl = data.view_url
-                    if (data.whatsapp_url) waUrl = data.whatsapp_url
-                    if (data.mailto_url) mailUrl = data.mailto_url
                     setLineageDocId(doc)
                     await fetchLineageGraph(doc)
                 }
@@ -871,19 +914,8 @@ export default function LeakLensDashboard(props: {
                     }).catch(() => {})
                 }
             } catch {}
-
-            if (channel === "copy") {
-                await navigator.clipboard?.writeText(viewUrl).catch(() => {})
-                setShareStatusMsg(`✓ Viewing link copied (${viewUrl})`)
-            } else if (channel === "whatsapp") {
-                window.open(waUrl, "_blank", "noopener,noreferrer")
-                setShareStatusMsg(`✓ WhatsApp link ready for ${doc} (downstream opens auto-track).`)
-            } else {
-                window.location.href = mailUrl
-                setShareStatusMsg(`✓ Email draft ready for ${doc}.`)
-            }
         },
-        [sessionId, activeDocId, authUser, recipientId, watermarkResult, textInput, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph]
+        [activeDocId, sessionId, currentUserEmail, authUser, watermarkResult, textInput, lineageChain, resolveEffectiveBackendBase, resolveWhatsAppTrackingUrl, buildApiHeaders, fetchLineageGraph]
     )
 
     const handleRecordHop = React.useCallback(async () => {
@@ -1725,6 +1757,82 @@ export default function LeakLensDashboard(props: {
                 })}
             </div>
 
+            {/* Prominent WhatsApp Link Generator Bar */}
+            <div
+                style={{
+                    padding: "14px 28px",
+                    background: "linear-gradient(90deg, rgba(43, 216, 200, 0.08), rgba(123, 92, 250, 0.08))",
+                    borderBottom: "1px solid rgba(43, 216, 200, 0.22)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 12,
+                }}
+            >
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 320px", minWidth: 260 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#2BD8C8" }}>
+                            💬 WhatsApp Link Generator
+                        </span>
+                        <span style={{ fontSize: 10, fontFamily: "monospace", color: "#94a3b8" }}>
+                            Doc: {activeDocId} • Sharer: {currentUserEmail}
+                        </span>
+                    </div>
+                    <input
+                        type="text"
+                        readOnly
+                        value={resolveWhatsAppTrackingUrl()}
+                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                        style={{
+                            ...inputStyle,
+                            padding: "6px 10px",
+                            fontSize: 11,
+                            fontFamily: "monospace",
+                            color: "#cbd5e1",
+                            backgroundColor: "rgba(3, 4, 8, 0.72)",
+                        }}
+                    />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                        type="button"
+                        onClick={() => handleShareProtectedLink("copy")}
+                        style={{
+                            padding: "10px 16px",
+                            background: "linear-gradient(135deg, #2BD8C8, #14B8A6)",
+                            color: "#041311",
+                            border: "none",
+                            borderRadius: 8,
+                            cursor: "pointer",
+                            fontSize: 12.5,
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                            boxShadow: "0 0 22px rgba(43, 216, 200, 0.28)",
+                        }}
+                    >
+                        {waLinkCopied ? "✓ Copied WhatsApp Tracking Link!" : "📋 Copy WhatsApp Tracking Link"}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleShareProtectedLink("whatsapp")}
+                        style={{
+                            padding: "10px 14px",
+                            backgroundColor: "rgba(123, 92, 250, 0.16)",
+                            border: "1px solid rgba(123, 92, 250, 0.45)",
+                            color: "#C4B5FD",
+                            borderRadius: 8,
+                            cursor: "pointer",
+                            fontSize: 12,
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                        }}
+                    >
+                        💬 Share via WhatsApp
+                    </button>
+                </div>
+            </div>
+
             {/* Tab Body */}
             <div style={{ padding: 28 }}>
                 {/* FLOATING CANARY BEACON WEBSOCKET ALERT TOAST / MODAL */}
@@ -1852,7 +1960,10 @@ export default function LeakLensDashboard(props: {
                                     <input
                                         type="text"
                                         value={sessionId}
-                                        onChange={(e) => setSessionId(e.target.value)}
+                                        onChange={(e) => {
+                                            setSessionId(e.target.value)
+                                            setLineageDocId(e.target.value)
+                                        }}
                                         style={inputStyle}
                                     />
                                 </div>
@@ -2136,6 +2247,24 @@ export default function LeakLensDashboard(props: {
                                         }}
                                     >
                                         📄 Export PDF
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => handleShareProtectedLink("copy")}
+                                        style={{
+                                            padding: "10px 14px",
+                                            background: "linear-gradient(135deg, #2BD8C8, #14B8A6)",
+                                            border: "none",
+                                            color: "#041311",
+                                            borderRadius: 6,
+                                            cursor: "pointer",
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    >
+                                        {waLinkCopied ? "✓ Copied!" : "📋 Copy WhatsApp Tracking Link"}
                                     </button>
 
                                     <button
