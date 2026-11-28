@@ -22,10 +22,15 @@ interface WatermarkResponse {
 }
 
 interface LineageHop {
-    user_id: string
-    legal_name: string
-    email: string
-    hop_depth: number
+    user_id?: string
+    legal_name?: string
+    email?: string
+    parent_email?: string
+    child_email?: string
+    child_name?: string
+    hop_depth?: number
+    hop_level?: number
+    ip_address?: string | null
     timestamp?: string | null
     segment_hash?: string
 }
@@ -59,9 +64,12 @@ interface InspectResponse {
 }
 
 interface BeaconAlert {
-    id?: number
+    id?: number | string
     event?: string
     doc_id: string
+    original_sharer?: string
+    viewer_email?: string | null
+    viewer_name?: string | null
     user_id?: string
     recipient_id?: string
     original_recipient_id?: string
@@ -342,7 +350,7 @@ export default function LeakLensDashboard(props: {
         googleClientId = "243029529822-mkj5hefpohh86e5ru9fdkatve05bubaq.apps.googleusercontent.com",
         loginUrl = FRAMER_LOGIN_URL,
         requireAuthGuard = true,
-        clientOnly = true,
+        clientOnly = false,
     } = props
 
     const isFramerEditor = React.useMemo(() => {
@@ -359,10 +367,16 @@ export default function LeakLensDashboard(props: {
         () => (currentApiUrl || "").replace(/\/+$/, ""),
         [currentApiUrl]
     )
-    const buildApiHeaders = React.useCallback(
-        (extra: Record<string, string> = {}) => ({ ...extra }),
-        []
-    )
+    const buildApiHeaders = React.useCallback((extra: Record<string, string> = {}) => {
+        const hdrs: Record<string, string> = { ...extra }
+        if (typeof window !== "undefined") {
+            const fbTok = window.localStorage.getItem("firebase_id_token")
+            if (fbTok && !hdrs["X-Firebase-Token"]) hdrs["X-Firebase-Token"] = fbTok
+            const appTok = window.localStorage.getItem("access_token")
+            if (appTok && !hdrs["Authorization"]) hdrs["Authorization"] = `Bearer ${appTok}`
+        }
+        return hdrs
+    }, [])
     const apiFetch = React.useCallback(
         (path: string, options: RequestInit = {}) => {
             if (clientOnly) {
@@ -398,14 +412,16 @@ export default function LeakLensDashboard(props: {
     const [liveAlerts, setLiveAlerts] = React.useState<BeaconAlert[]>([])
     const [activeBeaconToast, setActiveBeaconToast] = React.useState<BeaconAlert | null>(null)
     const [wsConnected, setWsConnected] = React.useState(false)
-    const [trackingDocId, setTrackingDocId] = React.useState("SES-SYNAPSE-2026")
+    const [firestoreLive, setFirestoreLive] = React.useState(false)
+    const [trackingDocId, setTrackingDocId] = React.useState("all")
     const [accessHistory, setAccessHistory] = React.useState<BeaconAlert[]>([])
     const [isLoadingHistory, setIsLoadingHistory] = React.useState(false)
-    const [lineageDocId, setLineageDocId] = React.useState("DOC-HELIOS-2026")
+    const [lineageDocId, setLineageDocId] = React.useState("DOC-2026-Q4")
     const [lineageNodes, setLineageNodes] = React.useState<LineageHop[]>([])
-    const [hopParentId, setHopParentId] = React.useState("User_14")
-    const [hopChildId, setHopChildId] = React.useState("User_15")
+    const [hopParentId, setHopParentId] = React.useState("")
+    const [hopChildId, setHopChildId] = React.useState("")
     const [isRecordingHop, setIsRecordingHop] = React.useState(false)
+    const [shareStatusMsg, setShareStatusMsg] = React.useState<string | null>(null)
     const [punEpochId, setPunEpochId] = React.useState<string | null>(null)
     const [punBlockedMsg, setPunBlockedMsg] = React.useState<string | null>(null)
     const [punSkPreview, setPunSkPreview] = React.useState<string>("SK_0 (Active Epoch Key)")
@@ -422,8 +438,8 @@ export default function LeakLensDashboard(props: {
     const [isStressTesting, setIsStressTesting] = React.useState(false)
 
     // --- TAB 1: WATERMARK GENERATOR STATE ---
-    const [recipientId, setRecipientId] = React.useState("Alice Smith (USR-8492)")
-    const [sessionId, setSessionId] = React.useState("SES-SYNAPSE-2026")
+    const [recipientId, setRecipientId] = React.useState("Operator")
+    const [sessionId, setSessionId] = React.useState("DOC-2026-Q4")
     const [textInput, setTextInput] = React.useState(
         "CONFIDENTIAL ACQUISITION MEMO:\nTarget enterprise valuation locked at $142M. Integration timeline initiated for Q1 2027. Strictly internal distribution only."
     )
@@ -499,8 +515,8 @@ export default function LeakLensDashboard(props: {
                     method: "POST",
                     headers: buildApiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
-                        doc_id: lineageDocId || "DOC-HELIOS-2026",
-                        user_id: "User_1",
+                        doc_id: lineageDocId || "DOC-2026-Q4",
+                        user_id: authUser?.email || recipientId || "operator",
                         duration_minutes: Math.max(1, Math.round(durationSec / 60)),
                     }),
                 }),
@@ -530,22 +546,23 @@ export default function LeakLensDashboard(props: {
         } catch {
             // Silently fall back to client-side lease timer when offline
         }
-    }, [currentApiUrl, recipientId, lineageDocId])
+    }, [currentApiUrl, recipientId, lineageDocId, authUser])
 
     const handleSimulateEpochPuncture = React.useCallback(async () => {
         const base = resolveEffectiveBackendBase()
         const epoch = punEpochId || "EP-SIMULATED"
-        const doc = lineageDocId || "DOC-HELIOS-2026"
+        const doc = lineageDocId || "DOC-2026-Q4"
+        const actor = authUser?.email || recipientId || "operator"
         try {
             await fetch(`${base}/api/drm/lease/puncture`, {
                 method: "POST",
                 headers: buildApiHeaders({ "Content-Type": "application/json" }),
-                body: JSON.stringify({ doc_id: doc, user_id: "User_1", epoch_id: epoch }),
+                body: JSON.stringify({ doc_id: doc, user_id: actor, epoch_id: epoch }),
             })
             await fetch(`${base}/api/drm/verify-access`, {
                 method: "POST",
                 headers: buildApiHeaders({ "Content-Type": "application/json" }),
-                body: JSON.stringify({ doc_id: doc, user_id: "User_1", epoch_id: epoch }),
+                body: JSON.stringify({ doc_id: doc, user_id: actor, epoch_id: epoch }),
             })
         } catch {}
         setPunSkPreview("SK_1 (0x0000_PUNCTURED)")
@@ -559,7 +576,7 @@ export default function LeakLensDashboard(props: {
             decrypted_viewport_text: null,
             status_message: "Access Expired. Key Punctured by TPM Hardware Counter",
         }))
-    }, [punEpochId, lineageDocId, resolveEffectiveBackendBase, buildApiHeaders])
+    }, [punEpochId, lineageDocId, authUser, recipientId, resolveEffectiveBackendBase, buildApiHeaders])
 
     const handleRevokeInstantly = async () => {
         try {
@@ -734,19 +751,20 @@ export default function LeakLensDashboard(props: {
     )
 
     const handleTriggerTestBeacon = React.useCallback(async () => {
-        const doc = trackingDocId.trim() || sessionId.trim() || "SES-SYNAPSE-2026"
-        const rec = recipientId.trim() || "Alice Smith (USR-8492)"
+        const targetFilter = trackingDocId.trim()
+        const doc = (targetFilter && targetFilter !== "all") ? targetFilter : (sessionId.trim() || "DOC-2026-Q4")
+        const rec = authUser?.email || recipientId.trim() || "Operator"
         const base = resolveEffectiveBackendBase()
         try {
             await fetch(
                 `${base}/api/beacon/${encodeURIComponent(doc)}/${encodeURIComponent(rec)}/pixel.png?t=${Date.now()}`,
                 { cache: "no-store", headers: buildApiHeaders() }
             )
-            fetchTrackingHistory(doc)
+            fetchTrackingHistory(trackingDocId)
         } catch {
             // Ignore network failures offline
         }
-    }, [trackingDocId, sessionId, recipientId, resolveEffectiveBackendBase, buildApiHeaders, fetchTrackingHistory])
+    }, [trackingDocId, sessionId, recipientId, authUser, resolveEffectiveBackendBase, buildApiHeaders, fetchTrackingHistory])
 
     React.useEffect(() => {
         if (typeof window === "undefined") return
@@ -839,42 +857,185 @@ export default function LeakLensDashboard(props: {
         }
     }, [resolveEffectiveBackendBase, fetchTrackingHistory])
 
-    React.useEffect(() => {
-        fetchTrackingHistory(trackingDocId)
-        if (wsConnected) return
-        const pollId = setInterval(() => {
-            fetchTrackingHistory(trackingDocId)
-        }, 8000)
-        return () => clearInterval(pollId)
-    }, [trackingDocId, wsConnected, fetchTrackingHistory])
-
     const fetchLineageGraph = React.useCallback(
         async (docIdOverride?: string) => {
-            const doc = (docIdOverride ?? lineageDocId).trim() || "DOC-HELIOS-2026"
+            const doc = (docIdOverride ?? lineageDocId).trim() || "DOC-2026-Q4"
             try {
                 const resp = await fetch(`${resolveEffectiveBackendBase()}/api/lineage/trace/${encodeURIComponent(doc)}`, {
                     headers: buildApiHeaders(),
                 })
                 if (resp.ok) {
                     const data = await resp.json()
-                    if (Array.isArray(data?.chain)) setLineageNodes(data.chain)
+                    const rows = Array.isArray(data?.tree) && data.tree.length > 0 ? data.tree : (data?.chain || [])
+                    setLineageNodes(rows)
                 }
             } catch {}
         },
         [lineageDocId, resolveEffectiveBackendBase, buildApiHeaders]
     )
 
+    React.useEffect(() => {
+        fetchTrackingHistory(trackingDocId)
+        if (wsConnected) return
+        const pollId = setInterval(() => {
+            fetchTrackingHistory(trackingDocId)
+            fetchLineageGraph(lineageDocId)
+        }, 3000)
+        return () => clearInterval(pollId)
+    }, [trackingDocId, lineageDocId, wsConnected, fetchTrackingHistory, fetchLineageGraph])
+
+    // Cloud Firestore Real-Time onSnapshot listener when Firebase Client Auth is active
+    React.useEffect(() => {
+        if (typeof window === "undefined") return
+        let disposed = false
+        let unsubLogs: (() => void) | null = null
+        let unsubLineage: (() => void) | null = null
+        let unsubAuth: (() => void) | null = null
+
+        ;(async () => {
+            try {
+                const appUrl = "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js"
+                const authUrl = "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js"
+                const fsUrl = "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js"
+                const fbAppMod: any = await import(/* @vite-ignore */ appUrl)
+                const fbAuthMod: any = await import(/* @vite-ignore */ authUrl)
+                const fbFsMod: any = await import(/* @vite-ignore */ fsUrl)
+                if (disposed) return
+
+                const fbConfig = {
+                    apiKey: "AIzaSyBpyT_htz0GZaIo0cRwYvosZmBRMKYp9sY",
+                    authDomain: "leaklens-77637.firebaseapp.com",
+                    projectId: "leaklens-77637",
+                    storageBucket: "leaklens-77637.firebasestorage.app",
+                    messagingSenderId: "279675539046",
+                    appId: "1:279675539046:web:13ce79ad629d45972367a7",
+                }
+                const fbApp = fbAppMod.getApps().length ? fbAppMod.getApp() : fbAppMod.initializeApp(fbConfig)
+                const fbAuth = fbAuthMod.getAuth(fbApp)
+                const fbDb = fbFsMod.getFirestore(fbApp)
+
+                unsubAuth = fbAuthMod.onAuthStateChanged(fbAuth, async (user: any) => {
+                    if (unsubLogs) { unsubLogs(); unsubLogs = null }
+                    if (unsubLineage) { unsubLineage(); unsubLineage = null }
+                    if (!user?.email || disposed) {
+                        setFirestoreLive(false)
+                        return
+                    }
+                    const idTok = await user.getIdToken().catch(() => "")
+                    if (idTok) window.localStorage.setItem("firebase_id_token", idTok)
+
+                    const logsQ = fbFsMod.query(
+                        fbFsMod.collection(fbDb, "access_logs"),
+                        fbFsMod.or(
+                            fbFsMod.where("owner_uid", "==", user.uid),
+                            fbFsMod.where("original_sharer", "==", user.email),
+                            fbFsMod.where("viewer_email", "==", user.email)
+                        ),
+                        fbFsMod.orderBy("timestamp", "desc"),
+                        fbFsMod.limit(50)
+                    )
+                    unsubLogs = fbFsMod.onSnapshot(
+                        logsQ,
+                        (snap: any) => {
+                            if (!disposed) setFirestoreLive(true)
+                            if (!snap.empty && !disposed) {
+                                setAccessHistory(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })))
+                            }
+                        },
+                        () => {
+                            if (!disposed) setFirestoreLive(false)
+                        }
+                    )
+
+                    const doc = lineageDocId.trim() || "DOC-2026-Q4"
+                    const linQ = fbFsMod.query(
+                        fbFsMod.collection(fbDb, "lineage_nodes"),
+                        fbFsMod.where("doc_id", "==", doc),
+                        fbFsMod.orderBy("hop_level", "asc"),
+                        fbFsMod.limit(50)
+                    )
+                    unsubLineage = fbFsMod.onSnapshot(
+                        linQ,
+                        (snap: any) => {
+                            if (!snap.empty && !disposed) {
+                                setLineageNodes(snap.docs.map((d: any) => d.data()))
+                            }
+                        },
+                        () => {}
+                    )
+                })
+            } catch {}
+        })()
+
+        return () => {
+            disposed = true
+            if (unsubLogs) unsubLogs()
+            if (unsubLineage) unsubLineage()
+            if (unsubAuth) unsubAuth()
+        }
+    }, [lineageDocId])
+
+    const handleShareProtectedLink = React.useCallback(
+        async (channel: "copy" | "whatsapp" | "email") => {
+            const doc = (sessionId || lineageDocId || "DOC-2026-Q4").trim()
+            const ownerEmail = authUser?.email || recipientId || "owner@leaklens.local"
+            const ownerName = authUser?.name || (ownerEmail.includes("@") ? ownerEmail.split("@")[0] : ownerEmail)
+            const content = watermarkResult?.watermarked_text || textInput
+            const base = resolveEffectiveBackendBase()
+            let viewUrl = `${base}/view/${encodeURIComponent(doc)}?ref=${encodeURIComponent(ownerEmail)}`
+            let waUrl = `https://wa.me/?text=${encodeURIComponent(`Confidential LeakLens document (${doc}): ${viewUrl}`)}`
+            let mailUrl = `mailto:?subject=${encodeURIComponent(`Confidential Document: ${doc}`)}&body=${encodeURIComponent(viewUrl)}`
+            try {
+                const resp = await fetch(`${base}/api/share/create-link`, {
+                    method: "POST",
+                    headers: buildApiHeaders({ "Content-Type": "application/json" }),
+                    body: JSON.stringify({
+                        doc_id: doc,
+                        title: `Protected Document — ${doc}`,
+                        content,
+                        owner_email: ownerEmail,
+                        owner_name: ownerName,
+                    }),
+                })
+                if (resp.ok) {
+                    const data = await resp.json()
+                    if (data.view_url) viewUrl = data.view_url
+                    if (data.whatsapp_url) waUrl = data.whatsapp_url
+                    if (data.mailto_url) mailUrl = data.mailto_url
+                    setLineageDocId(doc)
+                    await fetchLineageGraph(doc)
+                }
+            } catch {}
+
+            if (channel === "copy") {
+                await navigator.clipboard?.writeText(viewUrl).catch(() => {})
+                setShareStatusMsg(`✓ Viewing link copied (${viewUrl})`)
+            } else if (channel === "whatsapp") {
+                window.open(waUrl, "_blank", "noopener,noreferrer")
+                setShareStatusMsg(`✓ WhatsApp link ready for ${doc} (downstream opens auto-track).`)
+            } else {
+                window.location.href = mailUrl
+                setShareStatusMsg(`✓ Email draft ready for ${doc}.`)
+            }
+        },
+        [sessionId, lineageDocId, authUser, recipientId, watermarkResult, textInput, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph]
+    )
+
     const handleRecordHop = React.useCallback(async () => {
-        if (!hopParentId.trim() || !hopChildId.trim()) return
+        const parentVal = hopParentId.trim() || authUser?.email || "owner@leaklens.local"
+        const childVal = hopChildId.trim()
+        if (!childVal) return
         setIsRecordingHop(true)
         try {
             const resp = await fetch(`${resolveEffectiveBackendBase()}/api/share/record-hop`, {
                 method: "POST",
                 headers: buildApiHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({
-                    doc_id: lineageDocId.trim() || "DOC-HELIOS-2026",
-                    parent_user_id: hopParentId.trim(),
-                    child_user_id: hopChildId.trim(),
+                    doc_id: lineageDocId.trim() || "DOC-2026-Q4",
+                    parent_email: parentVal,
+                    parent_name: authUser?.name || parentVal,
+                    child_email: childVal,
+                    child_name: childVal.includes("@") ? childVal.split("@")[0] : childVal,
                 }),
             })
             if (resp.ok) {
@@ -882,7 +1043,7 @@ export default function LeakLensDashboard(props: {
             }
         } catch {}
         setIsRecordingHop(false)
-    }, [lineageDocId, hopParentId, hopChildId, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph])
+    }, [lineageDocId, hopParentId, hopChildId, authUser, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph])
 
     React.useEffect(() => {
         fetchLineageGraph(lineageDocId)
@@ -2098,6 +2259,40 @@ export default function LeakLensDashboard(props: {
                                     </button>
 
                                     <button
+                                        onClick={() => handleShareProtectedLink("whatsapp")}
+                                        style={{
+                                            padding: "10px 14px",
+                                            backgroundColor: "rgba(123, 92, 250, 0.14)",
+                                            border: "1px solid rgba(123, 92, 250, 0.35)",
+                                            color: "#C4B5FD",
+                                            borderRadius: 6,
+                                            cursor: "pointer",
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    >
+                                        💬 Share WhatsApp Link
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleShareProtectedLink("email")}
+                                        style={{
+                                            padding: "10px 14px",
+                                            backgroundColor: "rgba(255, 182, 39, 0.12)",
+                                            border: "1px solid rgba(255, 182, 39, 0.35)",
+                                            color: "#FFB627",
+                                            borderRadius: 6,
+                                            cursor: "pointer",
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    >
+                                        ✉️ Email Link
+                                    </button>
+
+                                    <button
                                         onClick={() => {
                                             setLeakedTextInput(watermarkResult.watermarked_text)
                                             setActiveTab("inspector")
@@ -2116,6 +2311,11 @@ export default function LeakLensDashboard(props: {
                                     >
                                         🔍 Inspect →
                                     </button>
+                                </div>
+                            )}
+                            {shareStatusMsg && (
+                                <div style={{ marginTop: 10, fontFamily: "monospace", fontSize: 11.5, color: "#2BD8C8" }}>
+                                    {shareStatusMsg}
                                 </div>
                             )}
                         </div>
@@ -2390,7 +2590,7 @@ export default function LeakLensDashboard(props: {
                             )}
                         </div>
 
-                    {/* MULTI-HOP LINEAGE CHAIN TREE VISUALIZER (MEGÍAS–QURESHI P2P MODEL) */}
+                    {/* REAL MULTI-USER LINEAGE CHAIN TREE VISUALIZER */}
                     <div
                         style={{
                             gridColumn: "1 / -1",
@@ -2407,10 +2607,10 @@ export default function LeakLensDashboard(props: {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                             <div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: "#F3F2F8" }}>
-                                    🕸 Multi-Hop Lineage Chain Tree (Megías–Qureshi P2P Model)
+                                    🕸 Multi-Hop Lineage Chain Tree (Real Multi-User Tracking)
                                 </div>
                                 <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginTop: 2 }}>
-                                    Document: {lineageDocId} • {lineageNodes.length} Participants Tracked
+                                    Document: {lineageDocId} • {lineageNodes.length} Real Participant{lineageNodes.length === 1 ? "" : "s"} Tracked
                                 </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -2419,22 +2619,22 @@ export default function LeakLensDashboard(props: {
                                     value={lineageDocId}
                                     onChange={(e) => setLineageDocId(e.target.value)}
                                     placeholder="Doc ID"
-                                    style={{ ...inputStyle, width: 150, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
+                                    style={{ ...inputStyle, width: 140, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
                                 />
                                 <input
                                     type="text"
                                     value={hopParentId}
                                     onChange={(e) => setHopParentId(e.target.value)}
-                                    placeholder="Parent ID"
-                                    style={{ ...inputStyle, width: 92, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
+                                    placeholder={authUser?.email || "Parent Email"}
+                                    style={{ ...inputStyle, width: 145, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
                                 />
                                 <span style={{ color: "#94a3b8", fontSize: 12 }}>➔</span>
                                 <input
                                     type="text"
                                     value={hopChildId}
                                     onChange={(e) => setHopChildId(e.target.value)}
-                                    placeholder="Child ID"
-                                    style={{ ...inputStyle, width: 92, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
+                                    placeholder="Recipient Email"
+                                    style={{ ...inputStyle, width: 145, padding: "6px 8px", fontSize: 11, fontFamily: "monospace" }}
                                 />
                                 <button
                                     type="button"
@@ -2453,25 +2653,44 @@ export default function LeakLensDashboard(props: {
                                 >
                                     {isRecordingHop ? "Recording..." : "+ Record Hop"}
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleShareProtectedLink("whatsapp")}
+                                    style={{
+                                        padding: "6px 12px",
+                                        borderRadius: 6,
+                                        border: "1px solid rgba(43, 216, 200, 0.45)",
+                                        backgroundColor: "rgba(43, 216, 200, 0.14)",
+                                        color: "#2BD8C8",
+                                        fontSize: 11,
+                                        fontFamily: "monospace",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    💬 Share Link
+                                </button>
                             </div>
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", paddingBottom: 6 }}>
                             {lineageNodes.length === 0 ? (
-                                <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#64748b" }}>
-                                    No downstream hops recorded for {lineageDocId}. Click &quot;+ Record Hop&quot; to create a chain.
+                                <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#94a3b8" }}>
+                                    [Owner: {authUser?.name || "You"} ({authUser?.email || "Sign in"})] — No downstream recipients yet for {lineageDocId}. Share the /view link via WhatsApp/Email to append real recipients automatically.
                                 </span>
                             ) : (
                                 lineageNodes.map((node, idx) => {
-                                    const isTail = idx === lineageNodes.length - 1
+                                    const hopNum = node.hop_level ?? node.hop_depth ?? idx
+                                    const displayName = node.child_name || node.legal_name || node.user_id || "Participant"
+                                    const displayEmail = node.child_email || node.email || ""
+                                    const isTail = idx === lineageNodes.length - 1 && hopNum > 0
                                     return (
-                                        <React.Fragment key={`${node.user_id}-${node.hop_depth}`}>
+                                        <React.Fragment key={`${displayEmail}-${hopNum}-${idx}`}>
                                             {idx > 0 && (
                                                 <span style={{ color: "#7B5CFA", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>➔</span>
                                             )}
                                             <div
                                                 style={{
-                                                    minWidth: 165,
+                                                    minWidth: 175,
                                                     flexShrink: 0,
                                                     padding: "10px 12px",
                                                     borderRadius: 10,
@@ -2482,11 +2701,11 @@ export default function LeakLensDashboard(props: {
                                                 }}
                                             >
                                                 <div style={{ color: isTail ? "#FF6B84" : "#2BD8C8", fontWeight: 700 }}>
-                                                    {node.hop_depth === 0 ? "[You · Owner]" : `[Hop ${node.hop_depth}: ${node.legal_name}]`}
+                                                    {hopNum === 0 ? `[Owner: ${displayName}]` : `[Hop ${hopNum}: ${displayName}]`}
                                                 </div>
-                                                <div style={{ color: "#94a3b8", marginTop: 2 }}>{node.email}</div>
+                                                <div style={{ color: "#94a3b8", marginTop: 2 }}>{displayEmail}</div>
                                                 <div style={{ color: "#64748b", marginTop: 2, fontSize: 9.5 }}>
-                                                    {node.timestamp ? new Date(node.timestamp).toLocaleTimeString() : "Origin Root"}
+                                                    {node.timestamp ? new Date(node.timestamp).toLocaleTimeString() : "Verified"}
                                                 </div>
                                             </div>
                                         </React.Fragment>
@@ -2496,7 +2715,7 @@ export default function LeakLensDashboard(props: {
                         </div>
                     </div>
 
-                    {/* LIVE TELEMETRY & ACCESS LOGS TABLE (CANARY BEACON + WEBSOCKETS) */}
+                    {/* LIVE TELEMETRY & ACCESS LOGS TABLE (FIRESTORE + WEBSOCKETS + AUTO-SYNC) */}
                     <div
                         style={{
                             gridColumn: "1 / -1",
@@ -2521,12 +2740,16 @@ export default function LeakLensDashboard(props: {
                                         fontFamily: "monospace",
                                         padding: "3px 8px",
                                         borderRadius: 999,
-                                        backgroundColor: wsConnected ? "rgba(43, 216, 200, 0.14)" : "rgba(255, 182, 39, 0.12)",
-                                        border: `1px solid ${wsConnected ? "rgba(43, 216, 200, 0.4)" : "rgba(255, 182, 39, 0.35)"}`,
-                                        color: wsConnected ? "#2BD8C8" : "#FFB627",
+                                        backgroundColor: "rgba(43, 216, 200, 0.14)",
+                                        border: "1px solid rgba(43, 216, 200, 0.4)",
+                                        color: "#2BD8C8",
                                     }}
                                 >
-                                    {wsConnected ? "● WS /ws/alerts CONNECTED" : "○ WS /ws/alerts STANDBY"}
+                                    {wsConnected
+                                        ? "● WS /ws/alerts CONNECTED"
+                                        : firestoreLive
+                                            ? "● FIRESTORE LIVE (onSnapshot)"
+                                            : "● REALTIME TELEMETRY ACTIVE"}
                                 </span>
                                 {liveAlerts.length > 0 && (
                                     <span
@@ -2611,6 +2834,7 @@ export default function LeakLensDashboard(props: {
                                         <th style={{ padding: "8px 10px" }}>Timestamp</th>
                                         <th style={{ padding: "8px 10px" }}>Document ID</th>
                                         <th style={{ padding: "8px 10px" }}>Original Sharer</th>
+                                        <th style={{ padding: "8px 10px" }}>Viewer (Name / Email)</th>
                                         <th style={{ padding: "8px 10px" }}>Resolved Hostname / IP</th>
                                         <th style={{ padding: "8px 10px" }}>Device User-Agent</th>
                                         <th style={{ padding: "8px 10px" }}>Status</th>
@@ -2619,8 +2843,8 @@ export default function LeakLensDashboard(props: {
                                 <tbody>
                                     {accessHistory.length === 0 ? (
                                         <tr>
-                                            <td colSpan={6} style={{ padding: "16px 10px", textAlign: "center", color: "#64748b" }}>
-                                                No Canary Beacon hits logged yet for &quot;{trackingDocId || "all"}&quot;. Export a PDF or click &quot;Simulate Beacon Hit&quot;.
+                                            <td colSpan={7} style={{ padding: "16px 10px", textAlign: "center", color: "#64748b" }}>
+                                                No Canary Beacon hits logged yet for &quot;{trackingDocId || "all"}&quot;. Share a /view link or click &quot;Simulate Beacon Hit&quot;.
                                             </td>
                                         </tr>
                                     ) : (
@@ -2634,14 +2858,19 @@ export default function LeakLensDashboard(props: {
                                                 </td>
                                                 <td style={{ padding: "8px 10px", color: "#9A82FF" }}>{log.doc_id}</td>
                                                 <td style={{ padding: "8px 10px", color: "#2BD8C8" }}>
-                                                    {log.user_id || log.original_recipient_id || log.recipient_id || "—"}
+                                                    {log.original_sharer || log.user_id || log.original_recipient_id || log.recipient_id || "—"}
+                                                </td>
+                                                <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>
+                                                    {log.viewer_name || log.viewer_email
+                                                        ? `${log.viewer_name ? `${log.viewer_name} ` : ""}${log.viewer_email ? `(${log.viewer_email})` : ""}`.trim()
+                                                        : "PDF / Pixel Open"}
                                                 </td>
                                                 <td style={{ padding: "8px 10px", color: "#FFB627" }}>
                                                     {log.reverse_host && log.reverse_host !== "unresolved"
                                                         ? `${log.reverse_host} (${log.ip_address})`
                                                         : log.ip_address}
                                                 </td>
-                                                <td style={{ padding: "8px 10px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                <td style={{ padding: "8px 10px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                                     {log.user_agent}
                                                 </td>
                                                 <td style={{ padding: "8px 10px" }}>

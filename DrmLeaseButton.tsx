@@ -75,8 +75,8 @@ export default function DrmLeaseButton(props: {
                     method: "POST",
                     headers,
                     body: JSON.stringify({
-                        doc_id: "DOC-HELIOS-2026",
-                        user_id: "User_1",
+                        doc_id: "DOC-2026-Q4",
+                        user_id: "operator",
                         duration_minutes: Math.max(1, Math.round(leaseSeconds / 60)),
                     }),
                 }),
@@ -103,12 +103,12 @@ export default function DrmLeaseButton(props: {
             await fetch(`${baseUrl}/api/drm/lease/puncture`, {
                 method: "POST",
                 headers: buildTunnelHeaders(baseUrl, { "Content-Type": "application/json" }),
-                body: JSON.stringify({ doc_id: "DOC-HELIOS-2026", user_id: "User_1", epoch_id: epoch }),
+                body: JSON.stringify({ doc_id: "DOC-2026-Q4", user_id: "operator", epoch_id: epoch }),
             })
             await fetch(`${baseUrl}/api/drm/verify-access`, {
                 method: "POST",
                 headers: buildTunnelHeaders(baseUrl, { "Content-Type": "application/json" }),
-                body: JSON.stringify({ doc_id: "DOC-HELIOS-2026", user_id: "User_1", epoch_id: epoch }),
+                body: JSON.stringify({ doc_id: "DOC-2026-Q4", user_id: "operator", epoch_id: epoch }),
             })
         } catch {}
         setPunBlockedMsg("❌ File Does Not Open — Decryption Key Destroyed")

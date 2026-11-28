@@ -22,7 +22,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/|manifest\\.json|sw\\.js|icons/|index\\.html|demo|login).*)",
+      "source": "/((?!api/|view(?:/|$)|manifest\\.json|sw\\.js|icons/|index\\.html|demo|login).*)",
       "destination": "/"
     }
   ]

@@ -1,42 +1,113 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import {
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  or,
+  query,
+  where,
+} from 'firebase/firestore';
 import { decodeWatermark } from '../utils/steganography';
-import { supabase } from '../supabaseClient';
+import { auth, db } from '../firebase';
 
 export default function LeakInspector() {
   const [leakedText, setLeakedText] = useState('');
   const [traceResult, setTraceResult] = useState(null);
   const [auditLog, setAuditLog] = useState(null);
+  const [liveTelemetry, setLiveTelemetry] = useState([]);
+  const [lineageHops, setLineageHops] = useState([]);
   const [statusMessage, setStatusMessage] = useState('');
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || !user.email) return;
+
+    const telemetryQuery = query(
+      collection(db, 'access_logs'),
+      or(
+        where('owner_uid', '==', user.uid),
+        where('original_sharer', '==', user.email),
+        where('viewer_email', '==', user.email),
+      ),
+      orderBy('timestamp', 'desc'),
+      limit(25),
+    );
+    const unsubscribeTelemetry = onSnapshot(
+      telemetryQuery,
+      (snapshot) => {
+        const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setLiveTelemetry(rows);
+      },
+      () => {
+        // Ignore snapshot errors when unauthenticated or Firestore API disabled
+      },
+    );
+
+    const lineageQuery = query(
+      collection(db, 'lineage_nodes'),
+      orderBy('hop_level', 'asc'),
+      limit(50),
+    );
+    const unsubscribeLineage = onSnapshot(
+      lineageQuery,
+      (snapshot) => {
+        const nodes = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setLineageHops(nodes);
+      },
+      () => {
+        // Ignore snapshot errors when unauthenticated or Firestore API disabled
+      },
+    );
+
+    return () => {
+      unsubscribeTelemetry();
+      unsubscribeLineage();
+    };
+  }, []);
 
   const handleTraceText = async () => {
     setStatusMessage('');
     setAuditLog(null);
 
-    // 1. Extract hidden zero-width Unicode payload
     const decoded = decodeWatermark(leakedText);
-
     if (decoded && decoded.userId) {
       setTraceResult(decoded);
-
-      // 2. Query Supabase audit logs (drm_leases / watermark_records) for verification
-      const { data, error } = await supabase
-        .from('drm_leases')
-        .select('*')
-        .eq('recipient_id', decoded.userId)
-        .gte('created_at', decoded.timestamp);
-
-      if (!error && data && data.length > 0) {
-        setAuditLog(data);
-      } else {
-        // Fallback: check watermark_records if no matching drm_lease row is returned
-        const { data: wmData } = await supabase
-          .from('watermark_records')
-          .select('*')
-          .eq('recipient_id', decoded.userId)
-          .gte('created_at', decoded.timestamp);
-        if (wmData && wmData.length > 0) {
-          setAuditLog(wmData);
+      const user = auth.currentUser;
+      if (!user) {
+        setStatusMessage('Sign in with Firebase Auth to query Cloud Firestore audit logs.');
+        return;
+      }
+      try {
+        const q = query(
+          collection(db, 'access_logs'),
+          or(
+            where('owner_uid', '==', user.uid),
+            where('original_sharer', '==', user.email || ''),
+          ),
+          limit(20),
+        );
+        const snap = await getDocs(q);
+        const matchedLogs = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((r) => r.original_sharer === decoded.userId || r.viewer_email === decoded.userId);
+        if (matchedLogs.length > 0) {
+          setAuditLog(matchedLogs);
+          return;
         }
+        const wmQ = query(
+          collection(db, 'watermark_records'),
+          where('owner_uid', '==', user.uid),
+          where('recipient_id', '==', decoded.userId),
+          limit(20),
+        );
+        const wmSnap = await getDocs(wmQ);
+        if (!wmSnap.empty) {
+          setAuditLog(wmSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        }
+      } catch (err) {
+        setStatusMessage(err?.message || 'Firestore lookup unavailable.');
       }
     } else {
       setTraceResult(null);
@@ -48,7 +119,7 @@ export default function LeakInspector() {
 
   return (
     <div style={{ padding: '20px', border: '1px solid #333', borderRadius: '8px' }}>
-      <h2>🔍 LeakLens Forensic Inspector</h2>
+      <h2>🔍 LeakLens Forensic Inspector (Firestore Real-Time Sync)</h2>
       <p>Paste leaked text or OCR output here to trace recipient identity:</p>
 
       <textarea
@@ -74,10 +145,23 @@ export default function LeakInspector() {
           <p><strong>Access Timestamp:</strong> {new Date(traceResult.timestamp).toLocaleString()}</p>
           {firstAuditRow && (
             <p>
-              <strong>Verified Session IP / Lease:</strong>{' '}
-              {firstAuditRow.ip_address || firstAuditRow.lease_id || firstAuditRow.signature || 'Verified in Supabase Logs'}
+              <strong>Verified Firestore IP / Sharer:</strong>{' '}
+              {firstAuditRow.ip_address || firstAuditRow.original_sharer || firstAuditRow.signature || 'Verified in Firestore'}
             </p>
           )}
+        </div>
+      )}
+
+      {lineageHops.length > 0 && (
+        <div style={{ marginTop: '16px', fontSize: '12px' }}>
+          <strong>Live Firestore Lineage Nodes ({lineageHops.length}):</strong>{' '}
+          {lineageHops.map((n) => `${n.child_name} (${n.child_email})`).join(' ➔ ')}
+        </div>
+      )}
+
+      {liveTelemetry.length > 0 && (
+        <div style={{ marginTop: '12px', fontSize: '12px', color: '#2BD8C8' }}>
+          <strong>Live Access Logs (onSnapshot):</strong> {liveTelemetry.length} event(s) synced.
         </div>
       )}
     </div>

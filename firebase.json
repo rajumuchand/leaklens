@@ -14,6 +14,10 @@
       }
     }
   },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
   "hosting": {
     "public": "static",
     "ignore": [
@@ -48,6 +52,14 @@
       {
         "source": "/login",
         "destination": "/login.html"
+      },
+      {
+        "source": "/view/**",
+        "destination": "/view.html"
+      },
+      {
+        "source": "/view",
+        "destination": "/view.html"
       },
       {
         "source": "/demo",

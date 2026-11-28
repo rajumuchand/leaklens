@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "access_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "doc_id", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "lineage_nodes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "doc_id", "order": "ASCENDING" },
+        { "fieldPath": "hop_level", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

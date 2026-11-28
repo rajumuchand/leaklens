@@ -269,9 +269,11 @@
             if (userProfile.picture) localStorage.setItem('user_picture', userProfile.picture);
 
             const targetUrl = new URL(getSafeRedirectTarget());
-            if (targetUrl.origin !== window.location.origin) {
+            if (targetUrl.origin !== window.location.origin || targetUrl.pathname.startsWith('/view/')) {
                 targetUrl.searchParams.set('token', sessionToken);
+                if (idToken) targetUrl.searchParams.set('fb_token', idToken);
                 if (userProfile.email) targetUrl.searchParams.set('email', userProfile.email);
+                if (userProfile.name) targetUrl.searchParams.set('name', userProfile.name);
             }
             window.location.replace(targetUrl.toString());
         }

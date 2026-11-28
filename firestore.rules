@@ -1,0 +1,633 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following Cloud Firestore structures
+// for LeakLens (Firebase project: leaklens-77637):
+//
+// Collection: access_logs/{logId}
+// Document ID: Auto-generated or deterministic access log ID
+// Fields:
+//   - doc_id: string (required, 1..128) - Target document identifier
+//   - original_sharer: string (required, 1..256) - Original sharer email or identifier
+//   - viewer_email: string | null (optional/nullable, 0..256) - Viewer email address
+//   - viewer_name: string | null (optional/nullable, 0..256) - Viewer display name
+//   - ip_address: string (required, 1..128) - Client IP address observed by beacon/access
+//   - reverse_host: string | null (optional/nullable, 0..256) - Reverse DNS hostname
+//   - user_agent: string | null (optional/nullable, 0..512) - Client User-Agent string
+//   - timestamp: timestamp | string (required, <= 64 if string) - Event timestamp
+//   - alert_triggered: bool (required) - Whether alert telemetry triggered
+//   - owner_uid: string (optional, 1..128, immutable, == request.auth.uid on create) - Operator UID
+// Note: Immutable append-only forensic audit log (update/delete denied).
+//
+// Collection: lineage_nodes/{nodeId}
+// Document ID: Auto-generated or transaction ID
+// Fields:
+//   - doc_id: string (required, 1..128) - Document identifier
+//   - parent_email: string (required, 1..256) - Upstream participant email or ID
+//   - child_email: string (required, 1..256) - Downstream participant email or ID
+//   - child_name: string (required, 1..256) - Downstream participant name
+//   - timestamp: timestamp | string (required, <= 64 if string) - Transfer timestamp
+//   - hop_level: int (required, 0 <= hop_level <= 50) - Hop depth in lineage chain
+//   - owner_uid: string (optional, 1..128, immutable, == request.auth.uid on create) - Operator UID
+//   - ip_address: string | null (optional/nullable, 0..128 if string) - Optional hop IP
+// Note: Immutable append-only cryptographic lineage ledger (update/delete denied).
+//
+// Collection: shared_documents/{docId}
+// Document ID: Document identifier
+// Fields:
+//   - doc_id: string (required, 1..128, immutable) - Document identifier
+//   - title: string (required, 1..256) - Document title
+//   - content: string (required, 1..50000) - Protected document content
+//   - owner_email: string (required, 1..256, immutable) - Document owner email
+//   - owner_name: string (required, 1..256) - Document owner display name
+//   - owner_uid: string (required, 1..128, immutable) - Document owner Firebase Auth UID
+//   - classification: string (required, 1..64) - Document classification label
+//   - created_at: timestamp | string (required, <= 64 if string, immutable) - Creation time
+//
+// Collection: watermark_records/{recordId}
+// Document ID: Watermark record identifier
+// Fields:
+//   - owner_uid: string (required, 1..128, immutable) - Owner Firebase Auth UID
+//   - owner_email: string | null (optional/nullable, 1..256 if string, immutable) - Owner email
+//   - doc_id: string (optional, 1..128) - Associated document identifier
+//   - signature: string (required, 1..256) - Cryptographic watermark signature
+//   - recipient_id: string (required, 1..256) - Recipient identifier
+//   - session_id: string (required, 1..128) - Session identifier
+//   - source_type: string (optional, 1..64) - Watermark source type
+//   - filename: string | null (optional/nullable, 0..256 if string) - Associated filename
+//   - chunks_embedded: int (optional, 0..100000) - Number of embedded chunks
+//   - sig_bits: string | null (optional/nullable, 0..256 if string) - Encoded signature bitstring
+//   - full_bits: string | null (optional/nullable, 0..512 if string) - Full sync+signature bitstring
+//   - created_at: timestamp | string (required, <= 64 if string, immutable) - Creation time
+//
+// Collection: drm_leases/{leaseId}
+// Document ID: Lease or epoch lease identifier
+// Fields:
+//   - owner_uid: string (required, 1..128, immutable) - Owner Firebase Auth UID
+//   - owner_email: string | null (optional/nullable, 1..256 if string, immutable) - Owner email
+//   - lease_id: string (required unless doc_id + epoch_id present, 1..128) - Lease identifier
+//   - doc_id: string (required if lease_id omitted, 1..128) - Protected document ID
+//   - epoch_id: string (required if lease_id omitted, 1..128) - Pun-CP-ABE epoch ID
+//   - user_id: string (optional, 1..256) - Target user ID
+//   - recipient_id: string (optional, 1..256) - Recipient identifier
+//   - device_hwid: string (optional, 1..128) - Device hardware ID
+//   - device_fingerprint: string (optional, 1..128) - Device fingerprint hash prefix
+//   - duration_seconds: int (optional, 1..31536000) - Lease duration in seconds
+//   - issued_wall_ts: number (optional, 0..99999999999) - Wall-clock issue timestamp
+//   - expires_at: timestamp | string (optional, <= 64 if string) - Expiration timestamp
+//   - revoked: bool (optional) - Lease revocation flag
+//   - tamper_detected: bool (optional) - Clock tampering flag
+//   - ram_wiped: bool (optional) - RAM buffer wiped flag
+//   - is_punctured: bool (optional) - Pun-CP-ABE punctured epoch flag
+//   - ram_key_preview: string | null (optional/nullable, 0..256 if string) - Masked RAM key preview
+//   - rsa_sig_prefix: string | null (optional/nullable, 0..256 if string) - RSA signature prefix
+//   - document_preview: string | null (optional/nullable, 0..2000 if string) - Document excerpt
+//   - ciphertext_preview: string | null (optional/nullable, 0..2000 if string) - Ciphertext preview
+//   - created_at: timestamp | string (required, <= 64 if string, immutable) - Creation time
+//   - updated_at: timestamp | string (optional, <= 64 if string) - Last update time
+//
+// Collection: leak_inspections/{inspectionId}
+// Document ID: Leak inspection identifier
+// Fields:
+//   - owner_uid: string (required, 1..128, immutable) - Owner Firebase Auth UID
+//   - owner_email: string | null (optional/nullable, 1..256 if string, immutable) - Owner email
+//   - source: string (required, 1..256) - Inspection source label
+//   - doc_id: string | null (optional/nullable, 0..128 if string) - Inspected document ID
+//   - filename: string | null (optional/nullable, 0..256 if string) - Inspected filename
+//   - match_found: bool (required) - Forensic match status
+//   - verified: bool (required) - Cryptographic verification status
+//   - recipient_id: string | null (optional/nullable, 0..256 if string) - Attributed recipient ID
+//   - session_id: string | null (optional/nullable, 0..128 if string) - Attributed session ID
+//   - signature: string | null (optional/nullable, 0..256 if string) - Attributed signature
+//   - recovery_mode: string | null (optional/nullable, 0..128 if string) - Recovery channel label
+//   - chunks_detected: int (optional, 0..100000) - Detected chunk count
+//   - chunks_verified: int (optional, 0..100000) - Verified chunk count
+//   - vector_layer_found: bool (optional) - PDF vector watermark flag
+//   - homoglyph_trace_detected: bool (optional) - Homoglyph channel detection flag
+//   - traitor_id: string | null (optional/nullable, 0..128 if string) - Identified traitor ID
+//   - traitor_name: string | null (optional/nullable, 0..256 if string) - Identified traitor name
+//   - traitor_email: string | null (optional/nullable, 0..256 if string) - Identified traitor email
+//   - accusation_score: number (optional, -10000..10000) - Tardos/Skoric accusation score
+//   - threshold_z: number (optional, 0..10000) - Tardos decision threshold
+//   - confidence: string | null (optional/nullable, 0..64 if string) - Attribution confidence
+//   - created_at: timestamp | string (required, <= 64 if string, immutable) - Creation time
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated via Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated token contains a non-empty email claim
+    function hasTokenEmail() {
+      return isAuthenticated() &&
+             'email' in request.auth.token &&
+             request.auth.token.email is string &&
+             request.auth.token.email.size() > 0;
+    }
+
+    // Check if user owns the resource by UID
+    function isOwner(userId) {
+      return isAuthenticated() &&
+             userId is string &&
+             request.auth.uid == userId;
+    }
+
+    // Check if authenticated user owns the existing document via owner_uid
+    function isDocOwner() {
+      return isAuthenticated() &&
+             'owner_uid' in resource.data &&
+             isOwner(resource.data.owner_uid);
+    }
+
+    // Verify optional owner_uid matches caller UID on create
+    function uidUnchanged() {
+      return isAuthenticated() && (
+        !('owner_uid' in request.resource.data) ||
+        (request.resource.data.owner_uid is string &&
+         request.resource.data.owner_uid == request.auth.uid)
+      );
+    }
+
+    // Ensure owner_uid is not modified on update
+    function uidNotModified() {
+      return isAuthenticated() && (
+        !('owner_uid' in request.resource.data) ||
+        ('owner_uid' in resource.data &&
+         request.resource.data.owner_uid == resource.data.owner_uid)
+      );
+    }
+
+    // Validate required fields exist
+    function hasRequiredFields(data, fields) {
+      return data.keys().hasAll(fields);
+    }
+
+    // Validate the document contains only allowed fields
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    // Validate immutable fields have not changed on update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Validate required string field length
+    function validStringLength(data, field, minLen, maxLen) {
+      return field in data &&
+             data[field] is string &&
+             data[field].size() >= minLen &&
+             data[field].size() <= maxLen;
+    }
+
+    // Validate optional string field (absent or bounded string)
+    function isValidOptionalString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+             (data[field] is string &&
+              data[field].size() >= minLen &&
+              data[field].size() <= maxLen);
+    }
+
+    // Validate optional/nullable string field (absent, null, or bounded string)
+    function isValidNullableString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+             data[field] == null ||
+             (data[field] is string &&
+              data[field].size() >= minLen &&
+              data[field].size() <= maxLen);
+    }
+
+    // Validate optional integer field within [minVal, maxVal]
+    function isValidOptionalIntRange(data, field, minVal, maxVal) {
+      return !(field in data) ||
+             (data[field] is int &&
+              data[field] >= minVal &&
+              data[field] <= maxVal);
+    }
+
+    // Validate optional numeric field within [minVal, maxVal]
+    function isValidOptionalNumberRange(data, field, minVal, maxVal) {
+      return !(field in data) ||
+             (data[field] is number &&
+              data[field] >= minVal &&
+              data[field] <= maxVal);
+    }
+
+    // Validate optional boolean field
+    function isValidOptionalBool(data, field) {
+      return !(field in data) || data[field] is bool;
+    }
+
+    // Validate Firestore timestamp or bounded ISO/UTC timestamp string
+    function isValidTimestampOrString(val) {
+      return val is timestamp ||
+             (val is string && val.size() >= 1 && val.size() <= 64);
+    }
+
+    // Ensure optional owner_email matches caller token email when set on create
+    function ownerEmailMatchesTokenOnCreate(data) {
+      return !('owner_email' in data) ||
+             data.owner_email == null ||
+             (hasTokenEmail() && data.owner_email == request.auth.token.email);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidAccessLog(data) {
+      return hasRequiredFields(data, [
+               'doc_id',
+               'original_sharer',
+               'ip_address',
+               'timestamp',
+               'alert_triggered'
+             ]) &&
+             hasOnlyAllowedFields(data, [
+               'doc_id',
+               'original_sharer',
+               'viewer_email',
+               'viewer_name',
+               'ip_address',
+               'reverse_host',
+               'user_agent',
+               'timestamp',
+               'alert_triggered',
+               'owner_uid'
+             ]) &&
+             validStringLength(data, 'doc_id', 1, 128) &&
+             validStringLength(data, 'original_sharer', 1, 256) &&
+             isValidNullableString(data, 'viewer_email', 0, 256) &&
+             isValidNullableString(data, 'viewer_name', 0, 256) &&
+             validStringLength(data, 'ip_address', 1, 128) &&
+             isValidNullableString(data, 'reverse_host', 0, 256) &&
+             isValidNullableString(data, 'user_agent', 0, 512) &&
+             isValidTimestampOrString(data.timestamp) &&
+             data.alert_triggered is bool &&
+             isValidOptionalString(data, 'owner_uid', 1, 128);
+    }
+
+    function isValidLineageNode(data) {
+      return hasRequiredFields(data, [
+               'doc_id',
+               'parent_email',
+               'child_email',
+               'child_name',
+               'timestamp',
+               'hop_level'
+             ]) &&
+             hasOnlyAllowedFields(data, [
+               'doc_id',
+               'parent_email',
+               'child_email',
+               'child_name',
+               'timestamp',
+               'hop_level',
+               'owner_uid',
+               'ip_address'
+             ]) &&
+             validStringLength(data, 'doc_id', 1, 128) &&
+             validStringLength(data, 'parent_email', 1, 256) &&
+             validStringLength(data, 'child_email', 1, 256) &&
+             validStringLength(data, 'child_name', 1, 256) &&
+             isValidTimestampOrString(data.timestamp) &&
+             data.hop_level is int &&
+             data.hop_level >= 0 &&
+             data.hop_level <= 50 &&
+             isValidOptionalString(data, 'owner_uid', 1, 128) &&
+             isValidNullableString(data, 'ip_address', 0, 128);
+    }
+
+    function isValidSharedDocument(data) {
+      return hasRequiredFields(data, [
+               'doc_id',
+               'title',
+               'content',
+               'owner_email',
+               'owner_name',
+               'owner_uid',
+               'classification',
+               'created_at'
+             ]) &&
+             hasOnlyAllowedFields(data, [
+               'doc_id',
+               'title',
+               'content',
+               'owner_email',
+               'owner_name',
+               'owner_uid',
+               'classification',
+               'created_at'
+             ]) &&
+             validStringLength(data, 'doc_id', 1, 128) &&
+             validStringLength(data, 'title', 1, 256) &&
+             validStringLength(data, 'content', 1, 50000) &&
+             validStringLength(data, 'owner_email', 1, 256) &&
+             validStringLength(data, 'owner_name', 1, 256) &&
+             validStringLength(data, 'owner_uid', 1, 128) &&
+             validStringLength(data, 'classification', 1, 64) &&
+             isValidTimestampOrString(data.created_at);
+    }
+
+    function isValidWatermarkRecord(data) {
+      return hasRequiredFields(data, [
+               'owner_uid',
+               'signature',
+               'recipient_id',
+               'session_id',
+               'created_at'
+             ]) &&
+             hasOnlyAllowedFields(data, [
+               'owner_uid',
+               'owner_email',
+               'doc_id',
+               'signature',
+               'recipient_id',
+               'session_id',
+               'source_type',
+               'filename',
+               'chunks_embedded',
+               'sig_bits',
+               'full_bits',
+               'created_at'
+             ]) &&
+             validStringLength(data, 'owner_uid', 1, 128) &&
+             isValidNullableString(data, 'owner_email', 1, 256) &&
+             isValidOptionalString(data, 'doc_id', 1, 128) &&
+             validStringLength(data, 'signature', 1, 256) &&
+             validStringLength(data, 'recipient_id', 1, 256) &&
+             validStringLength(data, 'session_id', 1, 128) &&
+             isValidOptionalString(data, 'source_type', 1, 64) &&
+             isValidNullableString(data, 'filename', 0, 256) &&
+             isValidOptionalIntRange(data, 'chunks_embedded', 0, 100000) &&
+             isValidNullableString(data, 'sig_bits', 0, 256) &&
+             isValidNullableString(data, 'full_bits', 0, 512) &&
+             isValidTimestampOrString(data.created_at);
+    }
+
+    function isValidDrmLease(data) {
+      return hasRequiredFields(data, ['owner_uid', 'created_at']) &&
+             hasOnlyAllowedFields(data, [
+               'owner_uid',
+               'owner_email',
+               'lease_id',
+               'doc_id',
+               'epoch_id',
+               'user_id',
+               'recipient_id',
+               'device_hwid',
+               'device_fingerprint',
+               'duration_seconds',
+               'issued_wall_ts',
+               'expires_at',
+               'revoked',
+               'tamper_detected',
+               'ram_wiped',
+               'is_punctured',
+               'ram_key_preview',
+               'rsa_sig_prefix',
+               'document_preview',
+               'ciphertext_preview',
+               'created_at',
+               'updated_at'
+             ]) &&
+             validStringLength(data, 'owner_uid', 1, 128) &&
+             (
+               validStringLength(data, 'lease_id', 1, 128) ||
+               (validStringLength(data, 'doc_id', 1, 128) &&
+                validStringLength(data, 'epoch_id', 1, 128))
+             ) &&
+             isValidNullableString(data, 'owner_email', 1, 256) &&
+             isValidOptionalString(data, 'lease_id', 1, 128) &&
+             isValidOptionalString(data, 'doc_id', 1, 128) &&
+             isValidOptionalString(data, 'epoch_id', 1, 128) &&
+             isValidOptionalString(data, 'user_id', 1, 256) &&
+             isValidOptionalString(data, 'recipient_id', 1, 256) &&
+             isValidOptionalString(data, 'device_hwid', 1, 128) &&
+             isValidOptionalString(data, 'device_fingerprint', 1, 128) &&
+             isValidOptionalIntRange(data, 'duration_seconds', 1, 31536000) &&
+             isValidOptionalNumberRange(data, 'issued_wall_ts', 0, 99999999999) &&
+             (!('expires_at' in data) || isValidTimestampOrString(data.expires_at)) &&
+             isValidOptionalBool(data, 'revoked') &&
+             isValidOptionalBool(data, 'tamper_detected') &&
+             isValidOptionalBool(data, 'ram_wiped') &&
+             isValidOptionalBool(data, 'is_punctured') &&
+             isValidNullableString(data, 'ram_key_preview', 0, 256) &&
+             isValidNullableString(data, 'rsa_sig_prefix', 0, 256) &&
+             isValidNullableString(data, 'document_preview', 0, 2000) &&
+             isValidNullableString(data, 'ciphertext_preview', 0, 2000) &&
+             isValidTimestampOrString(data.created_at) &&
+             (!('updated_at' in data) || isValidTimestampOrString(data.updated_at));
+    }
+
+    function isValidLeakInspection(data) {
+      return hasRequiredFields(data, [
+               'owner_uid',
+               'source',
+               'match_found',
+               'verified',
+               'created_at'
+             ]) &&
+             hasOnlyAllowedFields(data, [
+               'owner_uid',
+               'owner_email',
+               'source',
+               'doc_id',
+               'filename',
+               'match_found',
+               'verified',
+               'recipient_id',
+               'session_id',
+               'signature',
+               'recovery_mode',
+               'chunks_detected',
+               'chunks_verified',
+               'vector_layer_found',
+               'homoglyph_trace_detected',
+               'traitor_id',
+               'traitor_name',
+               'traitor_email',
+               'accusation_score',
+               'threshold_z',
+               'confidence',
+               'created_at'
+             ]) &&
+             validStringLength(data, 'owner_uid', 1, 128) &&
+             isValidNullableString(data, 'owner_email', 1, 256) &&
+             validStringLength(data, 'source', 1, 256) &&
+             isValidNullableString(data, 'doc_id', 0, 128) &&
+             isValidNullableString(data, 'filename', 0, 256) &&
+             data.match_found is bool &&
+             data.verified is bool &&
+             isValidNullableString(data, 'recipient_id', 0, 256) &&
+             isValidNullableString(data, 'session_id', 0, 128) &&
+             isValidNullableString(data, 'signature', 0, 256) &&
+             isValidNullableString(data, 'recovery_mode', 0, 128) &&
+             isValidOptionalIntRange(data, 'chunks_detected', 0, 100000) &&
+             isValidOptionalIntRange(data, 'chunks_verified', 0, 100000) &&
+             isValidOptionalBool(data, 'vector_layer_found') &&
+             isValidOptionalBool(data, 'homoglyph_trace_detected') &&
+             isValidNullableString(data, 'traitor_id', 0, 128) &&
+             isValidNullableString(data, 'traitor_name', 0, 256) &&
+             isValidNullableString(data, 'traitor_email', 0, 256) &&
+             isValidOptionalNumberRange(data, 'accusation_score', -10000, 10000) &&
+             isValidOptionalNumberRange(data, 'threshold_z', 0, 10000) &&
+             isValidNullableString(data, 'confidence', 0, 64) &&
+             isValidTimestampOrString(data.created_at);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. Canary Web Beacon & forensic access audit logs (immutable)
+    match /access_logs/{logId} {
+      allow read: if isAuthenticated() && (
+        ('owner_uid' in resource.data && isOwner(resource.data.owner_uid)) ||
+        (hasTokenEmail() && (
+          resource.data.original_sharer == request.auth.token.email ||
+          ('viewer_email' in resource.data &&
+           resource.data.viewer_email is string &&
+           resource.data.viewer_email == request.auth.token.email)
+        ))
+      );
+
+      allow create: if isAuthenticated() &&
+                       isValidAccessLog(request.resource.data) &&
+                       uidUnchanged() &&
+                       (
+                         ('owner_uid' in request.resource.data &&
+                          isOwner(request.resource.data.owner_uid)) ||
+                         (hasTokenEmail() && (
+                           request.resource.data.original_sharer == request.auth.token.email ||
+                           ('viewer_email' in request.resource.data &&
+                            request.resource.data.viewer_email is string &&
+                            request.resource.data.viewer_email == request.auth.token.email)
+                         ))
+                       );
+
+      allow update, delete: if false;
+    }
+
+    // 2. Multi-hop document sharing lineage nodes (append-only ledger)
+    match /lineage_nodes/{nodeId} {
+      allow read: if hasTokenEmail();
+
+      allow create: if isAuthenticated() &&
+                       isValidLineageNode(request.resource.data) &&
+                       uidUnchanged() &&
+                       (
+                         ('owner_uid' in request.resource.data &&
+                          isOwner(request.resource.data.owner_uid)) ||
+                         (hasTokenEmail() && (
+                           request.resource.data.child_email == request.auth.token.email ||
+                           request.resource.data.parent_email == request.auth.token.email
+                         ))
+                       );
+
+      allow update, delete: if false;
+    }
+
+    // 3. Confidential shared documents (owner-managed, readable by authenticated users)
+    match /shared_documents/{docId} {
+      allow read: if isAuthenticated();
+
+      allow create: if hasTokenEmail() &&
+                       isValidSharedDocument(request.resource.data) &&
+                       isOwner(request.resource.data.owner_uid) &&
+                       request.resource.data.owner_email == request.auth.token.email;
+
+      allow update: if isDocOwner() &&
+                       isValidSharedDocument(request.resource.data) &&
+                       uidNotModified() &&
+                       areImmutableFieldsUnchanged([
+                         'doc_id',
+                         'owner_uid',
+                         'owner_email',
+                         'created_at'
+                       ]);
+
+      allow delete: if isDocOwner();
+    }
+
+    // 4a. Watermark attribution records (strictly owner-scoped)
+    match /watermark_records/{recordId} {
+      allow read: if isDocOwner();
+
+      allow create: if isAuthenticated() &&
+                       isValidWatermarkRecord(request.resource.data) &&
+                       isOwner(request.resource.data.owner_uid) &&
+                       ownerEmailMatchesTokenOnCreate(request.resource.data);
+
+      allow update: if isDocOwner() &&
+                       isValidWatermarkRecord(request.resource.data) &&
+                       uidNotModified() &&
+                       areImmutableFieldsUnchanged([
+                         'owner_uid',
+                         'owner_email',
+                         'created_at'
+                       ]);
+
+      allow delete: if isDocOwner();
+    }
+
+    // 4b. Hardware-bound / Pun-CP-ABE DRM leases (strictly owner-scoped)
+    match /drm_leases/{leaseId} {
+      allow read: if isDocOwner();
+
+      allow create: if isAuthenticated() &&
+                       isValidDrmLease(request.resource.data) &&
+                       isOwner(request.resource.data.owner_uid) &&
+                       ownerEmailMatchesTokenOnCreate(request.resource.data);
+
+      allow update: if isDocOwner() &&
+                       isValidDrmLease(request.resource.data) &&
+                       uidNotModified() &&
+                       areImmutableFieldsUnchanged([
+                         'owner_uid',
+                         'owner_email',
+                         'created_at'
+                       ]);
+
+      allow delete: if isDocOwner();
+    }
+
+    // 4c. Forensic leak inspection records (strictly owner-scoped)
+    match /leak_inspections/{inspectionId} {
+      allow read: if isDocOwner();
+
+      allow create: if isAuthenticated() &&
+                       isValidLeakInspection(request.resource.data) &&
+                       isOwner(request.resource.data.owner_uid) &&
+                       ownerEmailMatchesTokenOnCreate(request.resource.data);
+
+      allow update: if isDocOwner() &&
+                       isValidLeakInspection(request.resource.data) &&
+                       uidNotModified() &&
+                       areImmutableFieldsUnchanged([
+                         'owner_uid',
+                         'owner_email',
+                         'created_at'
+                       ]);
+
+      allow delete: if isDocOwner();
+    }
+
+    // Default deny catch-all for all unmodeled collections and subcollections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -273,7 +273,7 @@ export default function App() {
 
       <div style={{ position: "relative", zIndex: 1 }}>
         <LeakLensDashboard
-          clientOnly={true}
+          clientOnly={false}
           loginUrl={FRAMER_LOGIN_URL}
           requireAuthGuard={false}
         />

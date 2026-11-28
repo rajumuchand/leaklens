@@ -108,28 +108,7 @@ ALLOWED_GOOGLE_CLIENT_IDS = {
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "synapse_jwt_secret_key_2026")
 ALGORITHM = "HS256"
 FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "leaklens-77637")
-
-SUPABASE_PROJECT_REF = "fpidtcofamgfyyiwyshy"
-SUPABASE_URL = (
-    os.environ.get("SUPABASE_URL")
-    or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    or f"https://{SUPABASE_PROJECT_REF}.supabase.co"
-).rstrip("/")
-SUPABASE_PUBLISHABLE_KEY = (
-    os.environ.get("SUPABASE_PUBLISHABLE_KEY")
-    or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
-    or "sb_publishable_g4OZs168BBOG7KkUOAj1ng_ZCHTXmBY"
-)
-SUPABASE_ANON_KEY = (
-    os.environ.get("SUPABASE_ANON_KEY")
-    or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-    or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwaWR0Y29mYW1nZnl5aXd5c2h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU1MDI2ODQsImV4cCI6MjExMTA3ODY4NH0.s6p3Gsf_mEYih_rMnpNdDj-6t56Ws36xTEQgH-iyvp0"
-)
-SUPABASE_SERVICE_ROLE_KEY = (
-    os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    or os.environ.get("SUPABASE_SECRET_KEY")
-    or ""
-)
+FIRESTORE_BASE_URL = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents"
 
 DEFAULT_CONFIDENTIAL_DOCS = [
     {
@@ -165,341 +144,282 @@ DEFAULT_CONFIDENTIAL_DOCS = [
 ]
 
 
-class SupabaseRestStore:
+def _to_fs_value(val) -> dict:
+    if val is None:
+        return {"nullValue": None}
+    if isinstance(val, bool):
+        return {"booleanValue": val}
+    if isinstance(val, int):
+        return {"integerValue": str(val)}
+    if isinstance(val, float):
+        return {"doubleValue": val}
+    if isinstance(val, dict):
+        return {"mapValue": {"fields": {str(k): _to_fs_value(v) for k, v in val.items()}}}
+    if isinstance(val, list):
+        return {"arrayValue": {"values": [_to_fs_value(v) for v in val]}}
+    return {"stringValue": str(val)}
+
+
+def _from_fs_value(v: dict):
+    if not isinstance(v, dict):
+        return None
+    if "nullValue" in v:
+        return None
+    if "booleanValue" in v:
+        return bool(v["booleanValue"])
+    if "integerValue" in v:
+        return int(v["integerValue"])
+    if "doubleValue" in v:
+        return float(v["doubleValue"])
+    if "stringValue" in v:
+        return v["stringValue"]
+    if "timestampValue" in v:
+        return v["timestampValue"]
+    if "mapValue" in v:
+        fields = (v["mapValue"] or {}).get("fields") or {}
+        return {k: _from_fs_value(val) for k, val in fields.items()}
+    if "arrayValue" in v:
+        return [_from_fs_value(item) for item in (v["arrayValue"] or {}).get("values") or []]
+    return None
+
+
+def _from_fs_doc(doc: dict) -> dict:
+    fields = doc.get("fields") or {}
+    parsed = {k: _from_fs_value(v) for k, v in fields.items()}
+    if "name" in doc:
+        parsed["_doc_id"] = doc["name"].rsplit("/", 1)[-1]
+    return parsed
+
+
+class FirestoreRestStore:
     """
-    Lightweight Supabase PostgREST + Auth REST integration for LeakLens.
-    - Uses SUPABASE_SERVICE_ROLE_KEY on the server when configured.
-    - Uses verified user Supabase JWT + publishable key when authenticated via Supabase Auth.
-    - Never exposes secret keys and gracefully falls back if disconnected.
+    Lightweight Cloud Firestore REST integration for LeakLens.
+    - Uses Google Service Account credentials (FIREBASE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS) when configured.
+    - Otherwise forwards authenticated Firebase User ID Tokens (X-Firebase-Token) under firestore.rules.
+    - Gracefully falls back to SQLite leaklens.db when Firestore API or credentials are unavailable.
     """
 
-    def __init__(self, url: str, publishable_key: str, anon_key: str, service_role_key: str = ""):
-        self.url = url.rstrip("/")
-        self.publishable_key = publishable_key
-        self.anon_key = anon_key
-        self.service_role_key = service_role_key
+    def __init__(self, project_id: str):
+        self.project_id = project_id
+        self.base_url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents"
         self.session = http_requests.Session()
+        self._sa_creds = None
+        self._load_service_account()
+
+    def _load_service_account(self) -> None:
+        raw_sa = (os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON") or "").strip()
+        sa_path = (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
+        try:
+            from google.oauth2 import service_account  # type: ignore
+
+            scopes = ["https://www.googleapis.com/auth/datastore"]
+            if raw_sa.startswith("{"):
+                self._sa_creds = service_account.Credentials.from_service_account_info(
+                    json.loads(raw_sa), scopes=scopes
+                )
+            elif sa_path and os.path.exists(sa_path):
+                self._sa_creds = service_account.Credentials.from_service_account_file(
+                    sa_path, scopes=scopes
+                )
+        except Exception:
+            self._sa_creds = None
 
     @property
-    def has_service_role(self) -> bool:
-        return bool(self.service_role_key)
+    def has_service_account(self) -> bool:
+        return self._sa_creds is not None
 
-    def _headers(self, user_jwt: Optional[str] = None, allow_public: bool = False) -> Optional[dict]:
-        if user_jwt:
-            return {
-                "apikey": self.publishable_key,
-                "Authorization": f"Bearer {user_jwt}",
-                "Content-Type": "application/json",
-            }
-        if self.service_role_key:
-            return {
-                "apikey": self.service_role_key,
-                "Authorization": f"Bearer {self.service_role_key}",
-                "Content-Type": "application/json",
-            }
-        if allow_public and self.publishable_key:
-            return {
-                "apikey": self.publishable_key,
-                "Content-Type": "application/json",
-            }
+    def _get_auth_token(self, user_fb_token: Optional[str] = None) -> Optional[str]:
+        if self._sa_creds is not None:
+            try:
+                if not self._sa_creds.valid:
+                    self._sa_creds.refresh(google_requests.Request())
+                if self._sa_creds.token:
+                    return self._sa_creds.token
+            except Exception:
+                pass
+        if user_fb_token:
+            return user_fb_token
         return None
 
-    def verify_user_jwt(self, user_jwt: str) -> Optional[dict]:
-        if not user_jwt:
+    def _headers(self, user_fb_token: Optional[str] = None) -> Optional[dict]:
+        tok = self._get_auth_token(user_fb_token)
+        if not tok:
+            return None
+        return {
+            "Authorization": f"Bearer {tok}",
+            "Content-Type": "application/json",
+        }
+
+    def verify_firebase_token(self, fb_token: str) -> Optional[dict]:
+        if not fb_token or fb_token.count(".") != 2:
             return None
         try:
-            resp = self.session.get(
-                f"{self.url}/auth/v1/user",
-                headers={
-                    "apikey": self.publishable_key or self.anon_key,
-                    "Authorization": f"Bearer {user_jwt}",
-                },
-                timeout=4,
+            decoded = id_token.verify_firebase_token(
+                fb_token,
+                google_requests.Request(),
+                audience=self.project_id,
             )
-            if resp.status_code == 200:
-                return resp.json()
+            if decoded and decoded.get("email"):
+                return decoded
         except Exception:
             pass
         return None
 
-    def sign_up_password(self, email: str, password: str, name: str = "") -> tuple[int, dict]:
-        try:
-            resp = self.session.post(
-                f"{self.url}/auth/v1/signup",
-                headers={
-                    "apikey": self.publishable_key or self.anon_key,
-                    "Content-Type": "application/json",
-                },
-                json={"email": email, "password": password, "data": {"name": name or email.split("@")[0]}},
-                timeout=6,
-            )
-            return resp.status_code, resp.json()
-        except Exception as exc:
-            return 503, {"error_description": f"Supabase Auth unreachable: {exc}"}
-
-    def sign_in_password(self, email: str, password: str) -> tuple[int, dict]:
-        try:
-            resp = self.session.post(
-                f"{self.url}/auth/v1/token?grant_type=password",
-                headers={
-                    "apikey": self.publishable_key or self.anon_key,
-                    "Content-Type": "application/json",
-                },
-                json={"email": email, "password": password},
-                timeout=6,
-            )
-            return resp.status_code, resp.json()
-        except Exception as exc:
-            return 503, {"error_description": f"Supabase Auth unreachable: {exc}"}
-
-    def fetch_confidential_documents(self, user_jwt: Optional[str] = None) -> list[dict]:
-        hdrs = self._headers(user_jwt=user_jwt, allow_public=True)
-        if not hdrs:
-            return DEFAULT_CONFIDENTIAL_DOCS
-        try:
-            resp = self.session.get(
-                f"{self.url}/rest/v1/confidential_documents",
-                headers=hdrs,
-                params={"select": "slug,title,classification,content", "order": "id.asc"},
-                timeout=4,
-            )
-            if resp.status_code == 200:
-                rows = resp.json()
-                if isinstance(rows, list) and rows:
-                    return rows
-        except Exception:
-            pass
-        return DEFAULT_CONFIDENTIAL_DOCS
-
-    def fetch_latest_heartbeat(self) -> Optional[dict]:
-        hdrs = self._headers(allow_public=True)
-        if not hdrs:
-            return None
-        try:
-            resp = self.session.get(
-                f"{self.url}/rest/v1/service_heartbeats",
-                headers=hdrs,
-                params={"select": "id,source,status,created_at", "order": "id.desc", "limit": "1"},
-                timeout=4,
-            )
-            if resp.status_code == 200:
-                rows = resp.json()
-                if isinstance(rows, list) and rows:
-                    return rows[0]
-        except Exception:
-            pass
-        return None
-
-    def record_watermark(self, row: dict, user_jwt: Optional[str] = None) -> bool:
-        hdrs = self._headers(user_jwt=user_jwt)
+    def add_document(self, collection: str, data: dict, user_fb_token: Optional[str] = None, doc_id: Optional[str] = None) -> bool:
+        hdrs = self._headers(user_fb_token)
         if not hdrs:
             return False
-        hdrs["Prefer"] = "return=minimal"
+        payload = {"fields": {str(k): _to_fs_value(v) for k, v in data.items()}}
         try:
-            resp = self.session.post(f"{self.url}/rest/v1/watermark_records", headers=hdrs, json=row, timeout=4)
-            return resp.status_code in (200, 201, 204)
+            if doc_id:
+                safe_id = re.sub(r"[^a-zA-Z0-9_@.-]", "_", doc_id)[:120]
+                resp = self.session.patch(f"{self.base_url}/{collection}/{quote(safe_id, safe='')}", headers=hdrs, json=payload, timeout=4)
+            else:
+                resp = self.session.post(f"{self.base_url}/{collection}", headers=hdrs, json=payload, timeout=4)
+            return resp.status_code in (200, 201)
         except Exception:
             return False
 
-    def lookup_homoglyph_signature(self, signature: str, user_jwt: Optional[str] = None) -> Optional[dict]:
-        hdrs = self._headers(user_jwt=user_jwt)
+    def get_document(self, collection: str, doc_id: str, user_fb_token: Optional[str] = None) -> Optional[dict]:
+        hdrs = self._headers(user_fb_token)
         if not hdrs:
             return None
         try:
-            resp = self.session.get(
-                f"{self.url}/rest/v1/watermark_records",
-                headers=hdrs,
-                params={
-                    "select": "recipient_id,session_id,signature,sig_bits,full_bits",
-                    "signature": f"eq.{signature}",
-                    "order": "id.desc",
-                    "limit": "1",
-                },
-                timeout=4,
-            )
+            safe_id = re.sub(r"[^a-zA-Z0-9_@.-]", "_", doc_id)[:120]
+            resp = self.session.get(f"{self.base_url}/{collection}/{quote(safe_id, safe='')}", headers=hdrs, timeout=4)
             if resp.status_code == 200:
-                rows = resp.json()
-                if rows:
-                    return rows[0]
+                return _from_fs_doc(resp.json())
         except Exception:
             pass
         return None
 
-    def fetch_recent_homoglyph_records(self, limit: int = 50, user_jwt: Optional[str] = None) -> list[dict]:
-        hdrs = self._headers(user_jwt=user_jwt)
+    def patch_document(self, collection: str, doc_id: str, patch: dict, user_fb_token: Optional[str] = None) -> bool:
+        hdrs = self._headers(user_fb_token)
+        if not hdrs or not patch:
+            return False
+        safe_id = re.sub(r"[^a-zA-Z0-9_@.-]", "_", doc_id)[:120]
+        params = [("updateMask.fieldPaths", str(k)) for k in patch.keys()]
+        payload = {"fields": {str(k): _to_fs_value(v) for k, v in patch.items()}}
+        try:
+            resp = self.session.patch(
+                f"{self.base_url}/{collection}/{quote(safe_id, safe='')}",
+                headers=hdrs,
+                params=params,
+                json=payload,
+                timeout=4,
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def list_collection(self, collection: str, limit: int = 100, user_fb_token: Optional[str] = None) -> list[dict]:
+        hdrs = self._headers(user_fb_token)
         if not hdrs:
             return []
         try:
             resp = self.session.get(
-                f"{self.url}/rest/v1/watermark_records",
+                f"{self.base_url}/{collection}",
                 headers=hdrs,
-                params={
-                    "select": "recipient_id,session_id,signature,sig_bits,full_bits",
-                    "full_bits": "not.is.null",
-                    "order": "id.desc",
-                    "limit": str(limit),
-                },
+                params={"pageSize": str(min(200, max(1, limit)))},
                 timeout=4,
             )
             if resp.status_code == 200:
-                return resp.json() or []
+                docs = (resp.json() or {}).get("documents") or []
+                return [_from_fs_doc(d) for d in docs]
         except Exception:
             pass
         return []
 
-    def record_inspection(self, row: dict, user_jwt: Optional[str] = None) -> bool:
-        hdrs = self._headers(user_jwt=user_jwt)
-        if not hdrs:
-            return False
-        hdrs["Prefer"] = "return=minimal"
-        try:
-            resp = self.session.post(f"{self.url}/rest/v1/leak_inspections", headers=hdrs, json=row, timeout=4)
-            return resp.status_code in (200, 201, 204)
-        except Exception:
-            return False
+    def fetch_confidential_documents(self, user_fb_token: Optional[str] = None) -> list[dict]:
+        rows = self.list_collection("confidential_documents", limit=20, user_fb_token=user_fb_token)
+        if rows:
+            return rows
+        return DEFAULT_CONFIDENTIAL_DOCS
 
-    def upsert_drm_lease(self, row: dict, user_jwt: Optional[str] = None) -> bool:
-        hdrs = self._headers(user_jwt=user_jwt)
-        if not hdrs:
-            return False
-        hdrs["Prefer"] = "resolution=merge-duplicates,return=minimal"
-        try:
-            resp = self.session.post(
-                f"{self.url}/rest/v1/drm_leases?on_conflict=lease_id",
-                headers=hdrs,
-                json=row,
-                timeout=4,
-            )
-            return resp.status_code in (200, 201, 204)
-        except Exception:
-            return False
+    def record_watermark(self, row: dict, user_fb_token: Optional[str] = None) -> bool:
+        return self.add_document("watermark_records", row, user_fb_token=user_fb_token)
 
-    def get_drm_lease(self, lease_id: str, user_jwt: Optional[str] = None) -> Optional[dict]:
-        hdrs = self._headers(user_jwt=user_jwt)
-        if not hdrs:
-            return None
-        try:
-            resp = self.session.get(
-                f"{self.url}/rest/v1/drm_leases",
-                headers=hdrs,
-                params={"select": "*", "lease_id": f"eq.{lease_id}", "limit": "1"},
-                timeout=4,
-            )
-            if resp.status_code == 200:
-                rows = resp.json()
-                if rows:
-                    return rows[0]
-        except Exception:
-            pass
+    def lookup_homoglyph_signature(self, signature: str, user_fb_token: Optional[str] = None) -> Optional[dict]:
+        for row in self.list_collection("watermark_records", limit=50, user_fb_token=user_fb_token):
+            if row.get("signature") == signature:
+                return row
         return None
 
-    def update_drm_lease(self, lease_id: str, patch: dict, user_jwt: Optional[str] = None) -> bool:
-        hdrs = self._headers(user_jwt=user_jwt)
-        if not hdrs:
-            return False
-        hdrs["Prefer"] = "return=minimal"
-        patch_payload = {**patch, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-        try:
-            resp = self.session.patch(
-                f"{self.url}/rest/v1/drm_leases",
-                headers=hdrs,
-                params={"lease_id": f"eq.{lease_id}"},
-                json=patch_payload,
-                timeout=4,
-            )
-            return resp.status_code in (200, 204)
-        except Exception:
-            return False
+    def fetch_recent_homoglyph_records(self, limit: int = 50, user_fb_token: Optional[str] = None) -> list[dict]:
+        return [
+            r for r in self.list_collection("watermark_records", limit=limit, user_fb_token=user_fb_token)
+            if r.get("full_bits")
+        ]
 
-    def create_qr_challenge(self, row: dict, user_jwt: Optional[str] = None) -> bool:
-        hdrs = self._headers(user_jwt=user_jwt)
-        if not hdrs:
-            return False
-        hdrs["Prefer"] = "return=minimal"
-        try:
-            resp = self.session.post(f"{self.url}/rest/v1/qr_challenges", headers=hdrs, json=row, timeout=4)
-            return resp.status_code in (200, 201, 204)
-        except Exception:
-            return False
+    def record_inspection(self, row: dict, user_fb_token: Optional[str] = None) -> bool:
+        return self.add_document("leak_inspections", row, user_fb_token=user_fb_token)
 
-    def consume_qr_challenge(self, challenge_code: str, user_jwt: Optional[str] = None) -> Optional[dict]:
-        hdrs = self._headers(user_jwt=user_jwt)
-        if not hdrs:
-            return None
-        hdrs["Prefer"] = "return=representation"
-        try:
-            resp = self.session.patch(
-                f"{self.url}/rest/v1/qr_challenges",
-                headers=hdrs,
-                params={"challenge_code": f"eq.{challenge_code}", "consumed": "eq.false"},
-                json={"consumed": True},
-                timeout=4,
-            )
-            if resp.status_code == 200:
-                rows = resp.json()
-                if rows:
-                    return rows[0]
-        except Exception:
-            pass
+    def upsert_drm_lease(self, row: dict, user_fb_token: Optional[str] = None) -> bool:
+        return self.add_document("drm_leases", row, user_fb_token=user_fb_token, doc_id=row.get("lease_id"))
+
+    def get_drm_lease(self, lease_id: str, user_fb_token: Optional[str] = None) -> Optional[dict]:
+        return self.get_document("drm_leases", lease_id, user_fb_token=user_fb_token)
+
+    def update_drm_lease(self, lease_id: str, patch: dict, user_fb_token: Optional[str] = None) -> bool:
+        patch_payload = {**patch, "updated_at": datetime.now(timezone.utc).isoformat()}
+        return self.patch_document("drm_leases", lease_id, patch_payload, user_fb_token=user_fb_token)
+
+    def create_qr_challenge(self, row: dict, user_fb_token: Optional[str] = None) -> bool:
+        return self.add_document("qr_challenges", row, user_fb_token=user_fb_token, doc_id=row.get("challenge_code"))
+
+    def consume_qr_challenge(self, challenge_code: str, user_fb_token: Optional[str] = None) -> Optional[dict]:
+        existing = self.get_document("qr_challenges", challenge_code, user_fb_token=user_fb_token)
+        if existing and not existing.get("consumed"):
+            self.patch_document("qr_challenges", challenge_code, {"consumed": True}, user_fb_token=user_fb_token)
+            return existing
         return None
 
-    def fetch_audit_summary(self, user_jwt: Optional[str] = None) -> dict:
-        hdrs = self._headers(user_jwt=user_jwt)
+    def fetch_audit_summary(self, user_fb_token: Optional[str] = None) -> dict:
+        hdrs = self._headers(user_fb_token)
         if not hdrs:
             return {
-                "connected": bool(self.url),
+                "connected": False,
                 "writable": False,
-                "auth_mode": "publishable_only",
+                "auth_mode": "firebase_client_only",
                 "watermarks": [],
                 "leases": [],
                 "inspections": [],
             }
-        result = {
+        return {
             "connected": True,
             "writable": True,
-            "auth_mode": "user_jwt_rls" if user_jwt else "service_role",
-            "watermarks": [],
-            "leases": [],
-            "inspections": [],
+            "auth_mode": "service_account" if self.has_service_account else "firebase_id_token",
+            "watermarks": self.list_collection("watermark_records", limit=8, user_fb_token=user_fb_token),
+            "leases": self.list_collection("drm_leases", limit=8, user_fb_token=user_fb_token),
+            "inspections": self.list_collection("leak_inspections", limit=8, user_fb_token=user_fb_token),
         }
-        try:
-            for key, table, sel in (
-                ("watermarks", "watermark_records", "id,recipient_id,session_id,signature,source_type,chunks_embedded,created_at"),
-                ("leases", "drm_leases", "id,lease_id,recipient_id,duration_seconds,revoked,tamper_detected,ram_wiped,created_at"),
-                ("inspections", "leak_inspections", "id,source,match_found,verified,recipient_id,session_id,signature,recovery_mode,created_at"),
-            ):
-                resp = self.session.get(
-                    f"{self.url}/rest/v1/{table}",
-                    headers=hdrs,
-                    params={"select": sel, "order": "id.desc", "limit": "8"},
-                    timeout=4,
-                )
-                if resp.status_code == 200:
-                    result[key] = resp.json() or []
-        except Exception:
-            pass
-        return result
 
 
-supabase_store = SupabaseRestStore(
-    url=SUPABASE_URL,
-    publishable_key=SUPABASE_PUBLISHABLE_KEY,
-    anon_key=SUPABASE_ANON_KEY,
-    service_role_key=SUPABASE_SERVICE_ROLE_KEY,
-)
+firestore_store = FirestoreRestStore(project_id=FIREBASE_PROJECT_ID)
 
 
-def _extract_supabase_ctx(request: Optional[Request]) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Extracts optional X-Supabase-Token from request and resolves verified (token, owner_id, owner_email)."""
+def _extract_firebase_ctx(request: Optional[Request]) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Extracts optional X-Firebase-Token (or Firebase Bearer token) and returns (token, uid, email, name)."""
     if request is None:
-        return None, None, None
-    sb_token = (request.headers.get("x-supabase-token") or "").strip()
-    if not sb_token:
-        return None, None, None
-    user_info = supabase_store.verify_user_jwt(sb_token)
-    if not user_info:
-        return None, None, None
-    return sb_token, user_info.get("id"), user_info.get("email")
+        return None, None, None, None
+    fb_token = (request.headers.get("x-firebase-token") or "").strip()
+    if not fb_token:
+        auth_hdr = (request.headers.get("authorization") or "").strip()
+        if auth_hdr.startswith("Bearer "):
+            candidate = auth_hdr.split(" ", 1)[1].strip()
+            fb_user = firestore_store.verify_firebase_token(candidate)
+            if fb_user:
+                return candidate, fb_user.get("uid") or fb_user.get("sub"), fb_user.get("email"), fb_user.get("name")
+            try:
+                app_claims = jwt.decode(candidate, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+                return None, None, app_claims.get("sub"), app_claims.get("name")
+            except Exception:
+                return None, None, None, None
+        return None, None, None, None
+    fb_user = firestore_store.verify_firebase_token(fb_token)
+    if not fb_user:
+        return None, None, None, None
+    return fb_token, fb_user.get("uid") or fb_user.get("sub"), fb_user.get("email"), fb_user.get("name")
 
 # Master RSA-2048 Keypair for Cryptographically Signed RS256 .lease Tickets
 RSA_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -711,8 +631,8 @@ def _persist_watermark(
     filename: Optional[str] = None,
     request: Optional[Request] = None,
 ) -> bool:
-    """Persists watermark ledger row & homoglyph signature bits to Supabase cleanly."""
-    sb_token, owner_id, owner_email = _extract_supabase_ctx(request)
+    """Persists watermark ledger row & homoglyph signature bits to Cloud Firestore cleanly."""
+    fb_token, owner_id, owner_email, _ = _extract_firebase_ctx(request)
     sig_bits = format(int(signature, 16), "032b") if re.fullmatch(r"[0-9a-fA-F]{1,8}", signature or "") else ""
     full_bits = (HOMOGLYPH_SYNC + sig_bits) if sig_bits else ""
     row = {
@@ -721,6 +641,7 @@ def _persist_watermark(
         "session_id": session_id,
         "source_type": source_type,
         "chunks_embedded": max(0, int(chunks_embedded)),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     if filename:
         row["filename"] = filename
@@ -729,15 +650,15 @@ def _persist_watermark(
     if full_bits:
         row["full_bits"] = full_bits
     if owner_id:
-        row["owner_id"] = owner_id
+        row["owner_uid"] = owner_id
     if owner_email:
         row["owner_email"] = owner_email
-    return supabase_store.record_watermark(row, user_jwt=sb_token)
+    return firestore_store.record_watermark(row, user_fb_token=fb_token)
 
 
 def _persist_inspection(res: dict, source_label: str, request: Optional[Request] = None) -> bool:
-    """Records forensic leak inspection outcomes into Supabase leak_inspections."""
-    sb_token, owner_id, owner_email = _extract_supabase_ctx(request)
+    """Records forensic leak inspection outcomes into Cloud Firestore leak_inspections."""
+    fb_token, owner_id, owner_email, _ = _extract_firebase_ctx(request)
     row = {
         "source": res.get("source") or source_label,
         "match_found": bool(res.get("match_found")),
@@ -750,12 +671,13 @@ def _persist_inspection(res: dict, source_label: str, request: Optional[Request]
         "chunks_verified": int(res.get("chunks_verified") or 0),
         "vector_layer_found": bool(res.get("vector_layer_found")),
         "homoglyph_trace_detected": bool(res.get("homoglyph_trace_detected")),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     if owner_id:
-        row["owner_id"] = owner_id
+        row["owner_uid"] = owner_id
     if owner_email:
         row["owner_email"] = owner_email
-    return supabase_store.record_inspection(row, user_jwt=sb_token)
+    return firestore_store.record_inspection(row, user_fb_token=fb_token)
 
 
 def _decode_homoglyph_fallback(leaked_text: str, user_jwt: Optional[str] = None) -> Optional[dict]:
@@ -768,13 +690,13 @@ def _decode_homoglyph_fallback(leaked_text: str, user_jwt: Optional[str] = None)
 
     extracted_bits = "".join("1" if m.group(0) == HOMOGLYPH_SPACE else "0" for m in space_matches)
 
-    # 1. Exact sync header + 32-bit HMAC digest scan (memory + Supabase fallback)
+    # 1. Exact sync header + 32-bit HMAC digest scan (memory + Firestore fallback)
     idx = extracted_bits.find(HOMOGLYPH_SYNC)
     while idx != -1 and idx + 38 <= len(extracted_bits):
         candidate_sig_bits = extracted_bits[idx + 6 : idx + 38]
         candidate_sig = f"{int(candidate_sig_bits, 2):08x}"
-        entry = HOMOGLYPH_LEDGER.get(candidate_sig) or supabase_store.lookup_homoglyph_signature(
-            candidate_sig, user_jwt=user_jwt
+        entry = HOMOGLYPH_LEDGER.get(candidate_sig) or firestore_store.lookup_homoglyph_signature(
+            candidate_sig, user_fb_token=user_jwt
         )
         if entry:
             HOMOGLYPH_LEDGER[candidate_sig] = entry
@@ -793,7 +715,7 @@ def _decode_homoglyph_fallback(leaked_text: str, user_jwt: Optional[str] = None)
     # 2. Cyclic partial-snippet alignment against issued homoglyph signatures (>= 12 spaces)
     candidates = list(HOMOGLYPH_LEDGER.values())
     if not candidates:
-        candidates = supabase_store.fetch_recent_homoglyph_records(limit=50, user_jwt=user_jwt)
+        candidates = firestore_store.fetch_recent_homoglyph_records(limit=50, user_fb_token=user_jwt)
     if len(extracted_bits) >= 12 and candidates:
         best_entry = None
         best_score = 0.0
@@ -1015,26 +937,6 @@ TRANSPARENT_1X1_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 )
 
-SEED_USERS = [
-    ("User_0", "Owner (You)", "owner@leaklens.io"),
-    ("User_1", "Alice Vance", "alice@leaklens.io"),
-    ("User_2", "Bob Mercer", "bob@leaklens.io"),
-    ("User_3", "Carol Chen", "carol@leaklens.io"),
-    ("User_4", "David Patel", "david@leaklens.io"),
-    ("User_5", "Elena Rostova", "elena@leaklens.io"),
-    ("User_6", "Frank Ortega", "frank@leaklens.io"),
-    ("User_7", "Grace Kim", "grace@leaklens.io"),
-    ("User_8", "Hassan Al-Mansoor", "hassan@leaklens.io"),
-    ("User_9", "Iris Lin", "iris@leaklens.io"),
-    ("User_10", "Jonas Weber", "jonas@leaklens.io"),
-    ("User_11", "Kira Novak", "kira@leaklens.io"),
-    ("User_12", "Liam O'Connor", "liam@leaklens.io"),
-    ("User_13", "Maya Brooks", "maya@leaklens.io"),
-    ("User_14", "Nikhil Verma", "nikhil@leaklens.io"),
-    ("User_15", "Omar Vance (External)", "omar.ext@leaklens.io"),
-]
-
-
 def _derive_paillier_pubkey(user_id: str) -> str:
     return "0x" + hashlib.sha256(f"paillier-n:{user_id}".encode()).hexdigest()[:32]
 
@@ -1045,7 +947,7 @@ def _compute_segment_hash(doc_id: str, parent_id: str, child_id: str, parent_has
 
 
 def init_tracking_db() -> None:
-    """Initializes leaklens.db tables (users, lineage_ledger, access_logs, drm_leases) and seeds demo participants."""
+    """Initializes leaklens.db tables (access_logs, lineage_nodes, shared_documents, users, lineage_ledger, drm_leases) cleanly."""
     conn = sqlite3.connect(TRACKING_DB_PATH)
     try:
         conn.execute(
@@ -1073,15 +975,45 @@ def init_tracking_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS lineage_nodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doc_id TEXT NOT NULL,
+                parent_email TEXT NOT NULL,
+                child_email TEXT NOT NULL,
+                child_name TEXT NOT NULL,
+                ip_address TEXT,
+                timestamp TEXT NOT NULL,
+                hop_level INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS shared_documents (
+                doc_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                owner_email TEXT NOT NULL,
+                owner_name TEXT NOT NULL,
+                classification TEXT DEFAULT 'CONFIDENTIAL',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS access_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                doc_id TEXT,
+                doc_id TEXT NOT NULL,
+                original_sharer TEXT NOT NULL DEFAULT 'Owner',
+                viewer_email TEXT,
+                viewer_name TEXT,
+                ip_address TEXT NOT NULL,
+                user_agent TEXT,
+                timestamp TEXT NOT NULL,
                 user_id TEXT,
                 original_recipient_id TEXT,
-                ip_address TEXT,
                 reverse_host TEXT,
-                user_agent TEXT,
-                timestamp TEXT,
                 alert_triggered BOOLEAN DEFAULT 1
             )
             """
@@ -1099,51 +1031,31 @@ def init_tracking_db() -> None:
             """
         )
 
-        # Ensure backward-compatible columns if upgrading an existing sqlite file
-        existing_cols = {
+        # Ensure backward-compatible & new schema columns on existing sqlite files
+        existing_access_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(access_logs)").fetchall()
         }
         for col_name, col_def in (
+            ("original_sharer", "TEXT NOT NULL DEFAULT 'Owner'"),
+            ("viewer_email", "TEXT"),
+            ("viewer_name", "TEXT"),
             ("user_id", "TEXT"),
             ("original_recipient_id", "TEXT"),
             ("reverse_host", "TEXT"),
             ("alert_triggered", "BOOLEAN DEFAULT 1"),
         ):
-            if col_name not in existing_cols:
+            if col_name not in existing_access_cols:
                 conn.execute(f"ALTER TABLE access_logs ADD COLUMN {col_name} {col_def}")
 
-        for uid, name, email in SEED_USERS:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO users (user_id, legal_name, email, paillier_pubkey)
-                VALUES (?, ?, ?, ?)
-                """,
-                (uid, name, email, _derive_paillier_pubkey(uid)),
-            )
+        existing_lineage_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(lineage_nodes)").fetchall()
+        }
+        if "ip_address" not in existing_lineage_cols:
+            conn.execute("ALTER TABLE lineage_nodes ADD COLUMN ip_address TEXT")
 
-        # Seed default 15-hop demo chain for DOC-HELIOS-2026 if empty
-        cnt = conn.execute(
-            "SELECT COUNT(*) FROM lineage_ledger WHERE doc_id = ?",
-            ("DOC-HELIOS-2026",),
-        ).fetchone()[0]
-        if cnt == 0:
-            base_dt = datetime(2026, 11, 27, 9, 0, 0, tzinfo=timezone.utc)
-            prev_hash = hashlib.sha256(b"DOC-HELIOS-2026|ROOT").hexdigest()[:24]
-            for hop in range(1, 16):
-                parent_id = f"User_{hop - 1}"
-                child_id = f"User_{hop}"
-                seg_hash = _compute_segment_hash("DOC-HELIOS-2026", parent_id, child_id, prev_hash)
-                tx_id = f"TX-HELIOS-{hop:02d}"
-                ts = (base_dt + timedelta(minutes=hop * 7)).isoformat()
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO lineage_ledger
-                    (tx_id, doc_id, parent_user_id, child_user_id, segment_hash, timestamp, hop_depth)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (tx_id, "DOC-HELIOS-2026", parent_id, child_id, seg_hash, ts, hop),
-                )
-                prev_hash = seg_hash
+        # Purge any previously seeded hardcoded fake Alice Vance / Bob Mercer demo lineage rows
+        conn.execute("DELETE FROM lineage_ledger WHERE tx_id LIKE 'TX-HELIOS-%'")
+        conn.execute("DELETE FROM users WHERE user_id LIKE 'User_%' AND email LIKE '%@leaklens.io'")
 
         conn.commit()
     finally:
@@ -1155,12 +1067,15 @@ init_tracking_db()
 
 def _log_beacon_access(
     doc_id: str,
-    user_id: str,
+    original_sharer: str,
     ip_address: str,
     reverse_host: str,
     user_agent: str,
     timestamp: str,
+    viewer_email: Optional[str] = None,
+    viewer_name: Optional[str] = None,
     alert_triggered: bool = True,
+    fb_token: Optional[str] = None,
 ) -> int:
     init_tracking_db()
     conn = sqlite3.connect(TRACKING_DB_PATH)
@@ -1168,27 +1083,48 @@ def _log_beacon_access(
         cur = conn.execute(
             """
             INSERT INTO access_logs
-            (doc_id, user_id, original_recipient_id, ip_address, reverse_host, user_agent, timestamp, alert_triggered)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (doc_id, original_sharer, viewer_email, viewer_name, ip_address, user_agent, timestamp,
+             user_id, original_recipient_id, reverse_host, alert_triggered)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 doc_id,
-                user_id,
-                user_id,
+                original_sharer,
+                viewer_email,
+                viewer_name,
                 ip_address,
-                reverse_host,
                 user_agent,
                 timestamp,
+                original_sharer,
+                original_sharer,
+                reverse_host,
                 int(bool(alert_triggered)),
             ),
         )
         conn.commit()
-        return int(cur.lastrowid or 0)
+        row_id = int(cur.lastrowid or 0)
     finally:
         conn.close()
 
+    firestore_store.add_document(
+        "access_logs",
+        {
+            "doc_id": doc_id,
+            "original_sharer": original_sharer,
+            "viewer_email": viewer_email,
+            "viewer_name": viewer_name,
+            "ip_address": ip_address,
+            "reverse_host": reverse_host,
+            "user_agent": user_agent,
+            "timestamp": timestamp,
+            "alert_triggered": bool(alert_triggered),
+        },
+        user_fb_token=fb_token,
+    )
+    return row_id
 
-def _fetch_beacon_history(doc_id: str) -> list[dict]:
+
+def _fetch_beacon_history(doc_id: str, fb_token: Optional[str] = None) -> list[dict]:
     init_tracking_db()
     conn = sqlite3.connect(TRACKING_DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -1196,8 +1132,9 @@ def _fetch_beacon_history(doc_id: str) -> list[dict]:
         if doc_id in ("all", "*"):
             rows = conn.execute(
                 """
-                SELECT id, doc_id, COALESCE(user_id, original_recipient_id) AS uid,
-                       COALESCE(original_recipient_id, user_id) AS orig_rec,
+                SELECT id, doc_id,
+                       COALESCE(NULLIF(original_sharer, ''), NULLIF(user_id, ''), original_recipient_id, 'Owner') AS orig_sharer,
+                       viewer_email, viewer_name,
                        ip_address, COALESCE(reverse_host, 'unresolved') AS reverse_host,
                        user_agent, timestamp, alert_triggered
                 FROM access_logs
@@ -1208,8 +1145,9 @@ def _fetch_beacon_history(doc_id: str) -> list[dict]:
         else:
             rows = conn.execute(
                 """
-                SELECT id, doc_id, COALESCE(user_id, original_recipient_id) AS uid,
-                       COALESCE(original_recipient_id, user_id) AS orig_rec,
+                SELECT id, doc_id,
+                       COALESCE(NULLIF(original_sharer, ''), NULLIF(user_id, ''), original_recipient_id, 'Owner') AS orig_sharer,
+                       viewer_email, viewer_name,
                        ip_address, COALESCE(reverse_host, 'unresolved') AS reverse_host,
                        user_agent, timestamp, alert_triggered
                 FROM access_logs
@@ -1219,12 +1157,15 @@ def _fetch_beacon_history(doc_id: str) -> list[dict]:
                 """,
                 (doc_id,),
             ).fetchall()
-        return [
+        records = [
             {
                 "id": r["id"],
                 "doc_id": r["doc_id"],
-                "user_id": r["uid"],
-                "original_recipient_id": r["orig_rec"],
+                "original_sharer": r["orig_sharer"],
+                "viewer_email": r["viewer_email"],
+                "viewer_name": r["viewer_name"],
+                "user_id": r["orig_sharer"],
+                "original_recipient_id": r["orig_sharer"],
                 "ip_address": r["ip_address"],
                 "reverse_host": r["reverse_host"],
                 "user_agent": r["user_agent"],
@@ -1235,6 +1176,33 @@ def _fetch_beacon_history(doc_id: str) -> list[dict]:
         ]
     finally:
         conn.close()
+
+    fs_rows = firestore_store.list_collection("access_logs", limit=100, user_fb_token=fb_token)
+    if fs_rows:
+        seen = {(r["timestamp"], r["doc_id"], r["ip_address"], r.get("viewer_email") or "") for r in records}
+        for fr in fs_rows:
+            if doc_id not in ("all", "*") and fr.get("doc_id") != doc_id:
+                continue
+            key = (fr.get("timestamp"), fr.get("doc_id"), fr.get("ip_address"), fr.get("viewer_email") or "")
+            if key not in seen:
+                seen.add(key)
+                sharer = fr.get("original_sharer") or "Owner"
+                records.append({
+                    "id": fr.get("_doc_id") or fr.get("id") or 0,
+                    "doc_id": fr.get("doc_id") or doc_id,
+                    "original_sharer": sharer,
+                    "viewer_email": fr.get("viewer_email"),
+                    "viewer_name": fr.get("viewer_name"),
+                    "user_id": sharer,
+                    "original_recipient_id": sharer,
+                    "ip_address": fr.get("ip_address") or "unknown",
+                    "reverse_host": fr.get("reverse_host") or "unresolved",
+                    "user_agent": fr.get("user_agent") or "",
+                    "timestamp": fr.get("timestamp") or "",
+                    "alert_triggered": bool(fr.get("alert_triggered", True)),
+                })
+        records.sort(key=lambda r: str(r.get("timestamp") or ""), reverse=True)
+    return records[:100]
 
 
 # =====================================================================
@@ -1312,12 +1280,157 @@ def _resolve_user_record(identifier: str) -> Optional[dict]:
     return None
 
 
-def _build_lineage_graph(doc_id: str) -> dict:
+def _upsert_real_lineage_hop(
+    doc_id: str,
+    parent_email: str,
+    child_email: str,
+    child_name: str,
+    parent_name: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    fb_token: Optional[str] = None,
+) -> dict:
+    """Appends a verified user hop into SQLite lineage_nodes (+ users, lineage_ledger) & Cloud Firestore."""
+    init_tracking_db()
+    doc_id = doc_id.strip() or "DOC-GENERAL"
+    parent_email = parent_email.strip()
+    child_email = child_email.strip()
+    child_name = (child_name or child_email).strip()
+    now_ts = datetime.now(timezone.utc).isoformat()
+
+    conn = sqlite3.connect(TRACKING_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        shared_row = conn.execute(
+            "SELECT owner_email, owner_name FROM shared_documents WHERE doc_id = ?",
+            (doc_id,),
+        ).fetchone()
+        existing_nodes = conn.execute(
+            "SELECT * FROM lineage_nodes WHERE doc_id = ? ORDER BY hop_level ASC, id ASC",
+            (doc_id,),
+        ).fetchall()
+
+        # Ensure root node (hop_level = 0) exists before downstream children
+        parent_node = next(
+            (
+                r for r in existing_nodes
+                if r["child_email"].lower() == parent_email.lower()
+                or r["child_name"].lower() == parent_email.lower()
+            ),
+            None,
+        )
+        if not existing_nodes:
+            root_email = (shared_row["owner_email"] if shared_row else None) or parent_email
+            root_name = (shared_row["owner_name"] if shared_row else None) or parent_name or (root_email.split("@")[0] if "@" in root_email else root_email)
+            conn.execute(
+                """
+                INSERT INTO lineage_nodes (doc_id, parent_email, child_email, child_name, ip_address, timestamp, hop_level)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+                """,
+                (doc_id, root_email, root_email, root_name, ip_address, now_ts),
+            )
+            firestore_store.add_document(
+                "lineage_nodes",
+                {
+                    "doc_id": doc_id,
+                    "parent_email": root_email,
+                    "child_email": root_email,
+                    "child_name": root_name,
+                    "ip_address": ip_address,
+                    "timestamp": now_ts,
+                    "hop_level": 0,
+                },
+                user_fb_token=fb_token,
+            )
+            existing_nodes = conn.execute(
+                "SELECT * FROM lineage_nodes WHERE doc_id = ? ORDER BY hop_level ASC, id ASC",
+                (doc_id,),
+            ).fetchall()
+            parent_node = next(
+                (
+                    r for r in existing_nodes
+                    if r["child_email"].lower() == parent_email.lower()
+                    or r["child_name"].lower() == parent_email.lower()
+                ),
+                None,
+            )
+
+        already = next(
+            (
+                r for r in existing_nodes
+                if r["parent_email"].lower() == parent_email.lower()
+                and r["child_email"].lower() == child_email.lower()
+            ),
+            None,
+        )
+        hop_level = int(parent_node["hop_level"]) + 1 if parent_node else (max([int(r["hop_level"]) for r in existing_nodes], default=0) + 1)
+
+        if not already and parent_email.lower() != child_email.lower():
+            conn.execute(
+                """
+                INSERT INTO lineage_nodes (doc_id, parent_email, child_email, child_name, ip_address, timestamp, hop_level)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (doc_id, parent_email, child_email, child_name, ip_address, now_ts, hop_level),
+            )
+            firestore_store.add_document(
+                "lineage_nodes",
+                {
+                    "doc_id": doc_id,
+                    "parent_email": parent_email,
+                    "child_email": child_email,
+                    "child_name": child_name,
+                    "ip_address": ip_address,
+                    "timestamp": now_ts,
+                    "hop_level": hop_level,
+                },
+                user_fb_token=fb_token,
+            )
+        elif already:
+            hop_level = int(already["hop_level"])
+
+        # Register real user & cryptographic segment hash for Tardos scoring
+        for uid, uname in ((parent_email, parent_name or parent_email), (child_email, child_name)):
+            u_email = uid if "@" in uid else f"{uid.lower()}@leaklens.local"
+            conn.execute(
+                """
+                INSERT INTO users (user_id, legal_name, email, paillier_pubkey)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET legal_name = excluded.legal_name, email = excluded.email
+                """,
+                (uid, uname, u_email, _derive_paillier_pubkey(uid)),
+            )
+
+        seg_hash = _compute_segment_hash(doc_id, parent_email, child_email, str(hop_level))
+        tx_id = f"TX-{secrets.token_hex(4).upper()}"
+        conn.execute(
+            """
+            INSERT INTO lineage_ledger (tx_id, doc_id, parent_user_id, child_user_id, segment_hash, timestamp, hop_depth)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (tx_id, doc_id, parent_email, child_email, seg_hash, now_ts, hop_level),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"tx_id": tx_id, "hop_level": hop_level, "segment_hash": seg_hash, "timestamp": now_ts}
+
+
+def _build_lineage_graph(doc_id: str, fb_token: Optional[str] = None) -> dict:
     init_tracking_db()
     conn = sqlite3.connect(TRACKING_DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
+        real_rows = conn.execute(
+            """
+            SELECT id, doc_id, parent_email, child_email, child_name, ip_address, timestamp, hop_level
+            FROM lineage_nodes
+            WHERE doc_id = ?
+            ORDER BY hop_level ASC, id ASC
+            """,
+            (doc_id,),
+        ).fetchall()
+        ledger_rows = conn.execute(
             """
             SELECT l.tx_id, l.doc_id, l.parent_user_id, l.child_user_id,
                    l.segment_hash, l.timestamp, l.hop_depth
@@ -1334,25 +1447,96 @@ def _build_lineage_graph(doc_id: str) -> dict:
     finally:
         conn.close()
 
+    # Merge any Firestore lineage_nodes if connected
+    fs_nodes = [
+        n for n in firestore_store.list_collection("lineage_nodes", limit=150, user_fb_token=fb_token)
+        if n.get("doc_id") == doc_id
+    ]
+
+    merged_rows: list[dict] = [dict(r) for r in real_rows]
+    seen_edges = {(r["parent_email"].lower(), r["child_email"].lower(), int(r["hop_level"])) for r in merged_rows}
+    for fn in fs_nodes:
+        key = (str(fn.get("parent_email") or "").lower(), str(fn.get("child_email") or "").lower(), int(fn.get("hop_level") or 0))
+        if key[1] and key not in seen_edges:
+            seen_edges.add(key)
+            merged_rows.append(fn)
+
+    merged_rows.sort(key=lambda r: (int(r.get("hop_level") or 0), str(r.get("timestamp") or "")))
+
     nodes_map: dict[str, dict] = {}
     edges: list[dict] = []
-    chain: list[dict] = []
     max_depth = 0
 
+    if merged_rows:
+        for r in merged_rows:
+            hop_lvl = int(r.get("hop_level") or 0)
+            if hop_lvl > max_depth:
+                max_depth = hop_lvl
+            p_email = str(r.get("parent_email") or "")
+            c_email = str(r.get("child_email") or "")
+            c_name = str(r.get("child_name") or c_email)
+            ts = r.get("timestamp")
+            ip_addr = r.get("ip_address")
+            c_key = c_email.lower()
+            if c_key not in nodes_map:
+                nodes_map[c_key] = {
+                    "user_id": c_email,
+                    "legal_name": c_name,
+                    "email": c_email,
+                    "parent_email": p_email,
+                    "child_email": c_email,
+                    "child_name": c_name,
+                    "ip_address": ip_addr,
+                    "paillier_pubkey": _derive_paillier_pubkey(c_email),
+                    "hop_depth": hop_lvl,
+                    "hop_level": hop_lvl,
+                    "timestamp": ts,
+                    "segment_hash": _compute_segment_hash(doc_id, p_email, c_email),
+                }
+            if hop_lvl > 0:
+                edges.append({
+                    "doc_id": doc_id,
+                    "parent_user_id": p_email,
+                    "parent_email": p_email,
+                    "child_user_id": c_email,
+                    "child_email": c_email,
+                    "child_name": c_name,
+                    "hop_depth": hop_lvl,
+                    "hop_level": hop_lvl,
+                    "timestamp": ts,
+                    "ip_address": ip_addr,
+                })
+        ordered_nodes = sorted(nodes_map.values(), key=lambda n: (n["hop_depth"], str(n.get("timestamp") or "")))
+        return {
+            "status": "success",
+            "doc_id": doc_id,
+            "max_hop_depth": max_depth,
+            "node_count": len(ordered_nodes),
+            "edge_count": len(edges),
+            "tree": merged_rows,
+            "nodes": ordered_nodes,
+            "edges": edges,
+            "chain": ordered_nodes,
+        }
+
+    # Legacy fallback strictly for non-mock ledger entries if lineage_nodes has no rows yet
     def ensure_node(uid: str, depth: int, ts: Optional[str] = None, seg_hash: str = "") -> None:
         info = users_map.get(uid, {})
         if uid not in nodes_map:
             nodes_map[uid] = {
                 "user_id": uid,
                 "legal_name": info.get("legal_name") or uid,
-                "email": info.get("email") or f"{uid.lower()}@leaklens.io",
+                "email": info.get("email") or (uid if "@" in uid else f"{uid.lower()}@leaklens.local"),
+                "child_name": info.get("legal_name") or uid,
+                "child_email": info.get("email") or uid,
                 "paillier_pubkey": info.get("paillier_pubkey") or _derive_paillier_pubkey(uid),
                 "hop_depth": depth,
+                "hop_level": depth,
                 "timestamp": ts,
                 "segment_hash": seg_hash,
             }
 
-    for r in rows:
+    for r in ledger_rows:
         depth = int(r["hop_depth"] or 0)
         if depth > max_depth:
             max_depth = depth
@@ -1360,14 +1544,14 @@ def _build_lineage_graph(doc_id: str) -> dict:
         c_id = r["child_user_id"]
         ensure_node(p_id, max(0, depth - 1))
         ensure_node(c_id, depth, r["timestamp"], r["segment_hash"])
-        # Update child hop depth/timestamp cleanly
         nodes_map[c_id]["hop_depth"] = depth
+        nodes_map[c_id]["hop_level"] = depth
         nodes_map[c_id]["timestamp"] = r["timestamp"]
         nodes_map[c_id]["segment_hash"] = r["segment_hash"]
 
         p_info = nodes_map[p_id]
         c_info = nodes_map[c_id]
-        edge_obj = {
+        edges.append({
             "tx_id": r["tx_id"],
             "doc_id": r["doc_id"],
             "parent_user_id": p_id,
@@ -1378,20 +1562,19 @@ def _build_lineage_graph(doc_id: str) -> dict:
             "segment_hash": r["segment_hash"],
             "timestamp": r["timestamp"],
             "hop_depth": depth,
-        }
-        edges.append(edge_obj)
+        })
 
     ordered_nodes = sorted(nodes_map.values(), key=lambda n: (n["hop_depth"], n["user_id"]))
-    chain = ordered_nodes
     return {
         "status": "success",
         "doc_id": doc_id,
         "max_hop_depth": max_depth,
         "node_count": len(ordered_nodes),
         "edge_count": len(edges),
+        "tree": ordered_nodes,
         "nodes": ordered_nodes,
         "edges": edges,
-        "chain": chain,
+        "chain": ordered_nodes,
     }
 
 
@@ -1874,6 +2057,7 @@ class QrCompleteRequest(BaseModel):
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 STATIC_INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
 STATIC_LOGIN_PATH = os.path.join(STATIC_DIR, "login.html")
+STATIC_VIEW_PATH = os.path.join(STATIC_DIR, "view.html")
 STATIC_MANIFEST_PATH = os.path.join(STATIC_DIR, "manifest.json")
 STATIC_SW_PATH = os.path.join(STATIC_DIR, "sw.js")
 STATIC_ICONS_DIR = os.path.join(STATIC_DIR, "icons")
@@ -1977,48 +2161,45 @@ def login_page(request: Request):
 
 @app.get("/api/health")
 def api_health(request: Request):
-    docs = supabase_store.fetch_confidential_documents()
-    heartbeat = supabase_store.fetch_latest_heartbeat()
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    docs = firestore_store.fetch_confidential_documents(user_fb_token=fb_token)
     return {
         "status": "online",
         "service": "LeakLens Engine",
         "project": "leaklens",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "scheme": _get_forwarded_proto(request),
-        "uptime_mode": "24x7 Cloud (Vercel + Supabase Edge + pg_cron + GitHub Actions)",
-        "supabase": {
-            "project_ref": SUPABASE_PROJECT_REF,
-            "url": SUPABASE_URL,
-            "edge_function_url": f"{SUPABASE_URL}/functions/v1/leaklens-engine",
-            "connected": bool(docs),
+        "uptime_mode": "24x7 Cloud (Vercel + Firebase Auth + Cloud Firestore + SQLite)",
+        "firebase": {
+            "project_id": FIREBASE_PROJECT_ID,
+            "auth_enabled": True,
+            "firestore_configured": firestore_store.has_service_account or bool(fb_token),
             "documents_count": len(docs),
-            "service_role_configured": supabase_store.has_service_role,
-            "latest_heartbeat": heartbeat,
         },
     }
 
 
 @app.get("/api/documents")
 def list_confidential_documents(request: Request):
-    """Fetches confidential documents from Supabase Postgres with built-in offline fallback."""
-    sb_token, _, _ = _extract_supabase_ctx(request)
-    docs = supabase_store.fetch_confidential_documents(user_jwt=sb_token)
+    """Fetches confidential documents from Cloud Firestore with built-in offline fallback."""
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    docs = firestore_store.fetch_confidential_documents(user_fb_token=fb_token)
     return {
         "status": "success",
-        "source": "supabase",
-        "project_ref": SUPABASE_PROJECT_REF,
+        "source": "firestore",
+        "project_id": FIREBASE_PROJECT_ID,
         "documents": docs,
     }
 
 
-@app.get("/api/supabase/records")
-def get_supabase_audit_records(request: Request):
+@app.get("/api/firebase/records")
+def get_firebase_audit_records(request: Request):
     """Returns persisted watermark, DRM lease, and leak inspection records for this operator/server."""
-    sb_token, _, _ = _extract_supabase_ctx(request)
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
     return {
         "status": "success",
-        "project_ref": SUPABASE_PROJECT_REF,
-        **supabase_store.fetch_audit_summary(user_jwt=sb_token),
+        "project_id": FIREBASE_PROJECT_ID,
+        **firestore_store.fetch_audit_summary(user_fb_token=fb_token),
     }
 
 
@@ -2040,7 +2221,7 @@ def watermark_endpoint(req: WatermarkRequest, request: Request):
         "signature": signature,
         "chunks_embedded": chunks_embedded,
         "watermarked_text": watermarked_text,
-        "supabase_persisted": persisted,
+        "firestore_persisted": persisted,
     }
 
 
@@ -2049,9 +2230,9 @@ def inspect_endpoint(req: InspectRequest, request: Request):
     if not req.leaked_text.strip():
         raise HTTPException(status_code=400, detail="Leaked snippet cannot be empty.")
 
-    sb_token, _, _ = _extract_supabase_ctx(request)
-    res = decode_watermark_text(req.leaked_text, user_jwt=sb_token)
-    res["supabase_persisted"] = _persist_inspection(res, "Text Steganography Inspector", request=request)
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    res = decode_watermark_text(req.leaked_text, user_jwt=fb_token)
+    res["firestore_persisted"] = _persist_inspection(res, "Text Steganography Inspector", request=request)
     return res
 
 
@@ -2059,8 +2240,8 @@ def inspect_endpoint(req: InspectRequest, request: Request):
 async def watermark_pdf_endpoint(
     request: Request,
     file: UploadFile = File(...),
-    recipient_id: str = Form("USR-8492-ALICE"),
-    session_id: str = Form("SESS-2026")
+    recipient_id: str = Form("Operator"),
+    session_id: str = Form("DOC-2026")
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Uploaded file must be a PDF.")
@@ -2099,7 +2280,7 @@ async def watermark_pdf_endpoint(
         "chunks_embedded": chunks_embedded,
         "watermarked_text": watermarked_text,
         "pages_processed": len(reader.pages),
-        "supabase_persisted": persisted,
+        "firestore_persisted": persisted,
     }
 
 
@@ -2107,8 +2288,8 @@ async def watermark_pdf_endpoint(
 async def download_watermarked_pdf(
     request: Request,
     file: UploadFile = File(...),
-    recipient_id: str = Form("USR-8492-ALICE"),
-    session_id: str = Form("SESS-2026")
+    recipient_id: str = Form("Operator"),
+    session_id: str = Form("DOC-2026")
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF.")
@@ -2183,15 +2364,24 @@ async def websocket_alerts_endpoint(websocket: WebSocket):
 
 
 @app.get("/api/beacon/{doc_id}/{recipient_id}/pixel.png")
-async def canary_beacon_pixel(doc_id: str, recipient_id: str, request: Request):
+async def canary_beacon_pixel(
+    doc_id: str,
+    recipient_id: str,
+    request: Request,
+    viewer_email: Optional[str] = None,
+    viewer_name: Optional[str] = None,
+):
     """
-    Canary Web Beacon pixel endpoint embedded in exported PDFs.
-    Extracts client IP, performs async reverse-DNS lookup, logs to SQLite access_logs,
+    Canary Web Beacon pixel endpoint embedded in exported PDFs & viewing links.
+    Extracts client IP, performs async reverse-DNS lookup, logs to SQLite access_logs & Cloud Firestore,
     and pushes a real-time WebSocket BEACON_TRIGGERED alert to connected dashboards.
     """
     client_ip = _extract_client_ip(request)
     user_agent = (request.headers.get("user-agent") or "Unknown User-Agent").strip()
     timestamp = datetime.now(timezone.utc).isoformat()
+    fb_token, _, fb_email, fb_name = _extract_firebase_ctx(request)
+    resolved_viewer_email = (viewer_email or fb_email or "").strip() or None
+    resolved_viewer_name = (viewer_name or fb_name or "").strip() or None
 
     reverse_host = "unresolved"
     if client_ip and client_ip != "unknown":
@@ -2207,18 +2397,24 @@ async def canary_beacon_pixel(doc_id: str, recipient_id: str, request: Request):
 
     log_id = _log_beacon_access(
         doc_id=doc_id,
-        user_id=recipient_id,
+        original_sharer=recipient_id,
         ip_address=client_ip,
         reverse_host=reverse_host,
         user_agent=user_agent,
         timestamp=timestamp,
+        viewer_email=resolved_viewer_email,
+        viewer_name=resolved_viewer_name,
         alert_triggered=True,
+        fb_token=fb_token,
     )
 
     alert_payload = {
         "id": log_id,
         "event": "BEACON_TRIGGERED",
         "doc_id": doc_id,
+        "original_sharer": recipient_id,
+        "viewer_email": resolved_viewer_email,
+        "viewer_name": resolved_viewer_name,
         "user_id": recipient_id,
         "recipient_id": recipient_id,
         "ip_address": client_ip,
@@ -2241,9 +2437,10 @@ async def canary_beacon_pixel(doc_id: str, recipient_id: str, request: Request):
 
 
 @app.get("/api/tracking/history/{doc_id}")
-def get_tracking_history(doc_id: str):
-    """Returns logged Canary Web Beacon access events for a document ordered by timestamp DESC."""
-    records = _fetch_beacon_history(doc_id)
+def get_tracking_history(doc_id: str, request: Request):
+    """Returns logged Canary Web Beacon access events ordered by timestamp DESC."""
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    records = _fetch_beacon_history(doc_id, fb_token=fb_token)
     return {
         "status": "success",
         "doc_id": doc_id,
@@ -2253,77 +2450,358 @@ def get_tracking_history(doc_id: str):
 
 
 # =====================================================================
-# PILLAR 1 ENDPOINTS: MULTI-HOP LINEAGE & TARDOS LEAK INSPECTION
+# SECURE TRACKED SHARE LINKS & INTERACTIVE /view/{doc_id}?ref=...
 # =====================================================================
-class RecordHopRequest(BaseModel):
+class ShareCreateLinkRequest(BaseModel):
     doc_id: str
-    parent_user_id: str
-    child_user_id: str
+    title: str = "Confidential Document"
+    content: str = ""
+    owner_email: str
+    owner_name: str = ""
+    classification: str = "CONFIDENTIAL"
 
 
-@app.post("/api/share/record-hop")
-def record_share_hop(req: RecordHopRequest):
-    """Records a downstream P2P transfer hop and performs Megías-Qureshi segment hash recombination."""
+class ViewCheckinRequest(BaseModel):
+    doc_id: str
+    ref: str = "Owner"
+    viewer_name: str
+    viewer_email: str
+
+
+@app.post("/api/share/create-link")
+def create_share_link(req: ShareCreateLinkRequest, request: Request):
+    """Persists shared document metadata and seeds Root (hop_level=0) for real multi-user sharing."""
     init_tracking_db()
-    doc_id = req.doc_id.strip() or "DOC-HELIOS-2026"
-    parent_id = req.parent_user_id.strip()
-    child_id = req.child_user_id.strip()
-    if not parent_id or not child_id:
-        raise HTTPException(status_code=400, detail="parent_user_id and child_user_id are required.")
+    fb_token, _, fb_email, fb_name = _extract_firebase_ctx(request)
+    doc_id = req.doc_id.strip() or f"DOC-{secrets.token_hex(3).upper()}"
+    owner_email = req.owner_email.strip() or fb_email or "owner@leaklens.local"
+    owner_name = (req.owner_name or fb_name or (owner_email.split("@")[0] if "@" in owner_email else owner_email)).strip()
+    title = req.title.strip() or f"Protected Brief ({doc_id})"
+    content = req.content.strip() or DEFAULT_CONFIDENTIAL_DOCS[0]["content"]
+    classification = req.classification.strip() or "CONFIDENTIAL"
+    created_at = datetime.now(timezone.utc).isoformat()
 
     conn = sqlite3.connect(TRACKING_DB_PATH)
-    conn.row_factory = sqlite3.Row
     try:
-        parent_row = conn.execute(
-            """
-            SELECT hop_depth, segment_hash FROM lineage_ledger
-            WHERE doc_id = ? AND child_user_id = ?
-            ORDER BY hop_depth DESC LIMIT 1
-            """,
-            (doc_id, parent_id),
-        ).fetchone()
-        parent_depth = int(parent_row["hop_depth"]) if parent_row else 0
-        parent_hash = str(parent_row["segment_hash"]) if parent_row else hashlib.sha256(doc_id.encode()).hexdigest()[:24]
-        hop_depth = parent_depth + 1
-        segment_hash = _compute_segment_hash(doc_id, parent_id, child_id, parent_hash)
-        tx_id = f"TX-{secrets.token_hex(4).upper()}"
-        ts = datetime.now(timezone.utc).isoformat()
-
         conn.execute(
             """
-            INSERT OR IGNORE INTO users (user_id, legal_name, email, paillier_pubkey)
-            VALUES (?, ?, ?, ?)
-            """,
-            (child_id, child_id, f"{child_id.lower()}@leaklens.io", _derive_paillier_pubkey(child_id)),
-        )
-        conn.execute(
-            """
-            INSERT INTO lineage_ledger
-            (tx_id, doc_id, parent_user_id, child_user_id, segment_hash, timestamp, hop_depth)
+            INSERT INTO shared_documents (doc_id, title, content, owner_email, owner_name, classification, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(doc_id) DO UPDATE SET
+                title = excluded.title,
+                content = excluded.content,
+                owner_email = excluded.owner_email,
+                owner_name = excluded.owner_name,
+                classification = excluded.classification
             """,
-            (tx_id, doc_id, parent_id, child_id, segment_hash, ts, hop_depth),
+            (doc_id, title, content, owner_email, owner_name, classification, created_at),
         )
+        has_root = conn.execute(
+            "SELECT 1 FROM lineage_nodes WHERE doc_id = ? AND hop_level = 0 LIMIT 1",
+            (doc_id,),
+        ).fetchone()
+        if not has_root:
+            conn.execute(
+                """
+                INSERT INTO lineage_nodes (doc_id, parent_email, child_email, child_name, ip_address, timestamp, hop_level)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+                """,
+                (doc_id, owner_email, owner_email, owner_name, _extract_client_ip(request), created_at),
+            )
+            firestore_store.add_document(
+                "lineage_nodes",
+                {
+                    "doc_id": doc_id,
+                    "parent_email": owner_email,
+                    "child_email": owner_email,
+                    "child_name": owner_name,
+                    "ip_address": _extract_client_ip(request),
+                    "timestamp": created_at,
+                    "hop_level": 0,
+                },
+                user_fb_token=fb_token,
+            )
         conn.commit()
     finally:
         conn.close()
 
+    firestore_store.add_document(
+        "shared_documents",
+        {
+            "doc_id": doc_id,
+            "title": title,
+            "content": content,
+            "owner_email": owner_email,
+            "owner_name": owner_name,
+            "classification": classification,
+            "created_at": created_at,
+        },
+        user_fb_token=fb_token,
+        doc_id=doc_id,
+    )
+
+    proto = _get_forwarded_proto(request)
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "leaklens-tyrn.vercel.app"
+    base_url = f"{proto}://{fwd_host}"
+    view_url = f"{base_url}/view/{quote(doc_id)}?ref={quote(owner_email)}"
+    share_msg = f"Confidential document ({doc_id}) shared by {owner_name}. Verify your identity to view: {view_url}"
     return {
-        "status": "SUCCESS",
-        "tx_id": tx_id,
+        "status": "success",
         "doc_id": doc_id,
-        "parent_user_id": parent_id,
-        "child_user_id": child_id,
-        "hop_depth": hop_depth,
-        "segment_hash": segment_hash,
-        "timestamp": ts,
+        "view_url": view_url,
+        "whatsapp_url": f"https://wa.me/?text={quote(share_msg)}",
+        "mailto_url": f"mailto:?subject={quote(f'Confidential Document: {title}')}&body={quote(share_msg)}",
+        "lineage": _build_lineage_graph(doc_id, fb_token=fb_token).get("tree", []),
     }
 
 
+@app.get("/view/{doc_id}")
+def serve_protected_view_page(doc_id: str):
+    if os.path.exists(STATIC_VIEW_PATH):
+        return FileResponse(
+            STATIC_VIEW_PATH,
+            media_type="text/html",
+            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+        )
+    raise HTTPException(status_code=404, detail="Protected viewer template missing.")
+
+
+@app.get("/api/view/info/{doc_id}")
+def get_protected_view_info(doc_id: str, request: Request):
+    """Returns non-sensitive document title & owner preview prior to recipient check-in."""
+    init_tracking_db()
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    conn = sqlite3.connect(TRACKING_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT doc_id, title, owner_email, owner_name, classification, created_at FROM shared_documents WHERE doc_id = ?",
+            (doc_id,),
+        ).fetchone()
+        if row:
+            doc_info = dict(row)
+        else:
+            fs_doc = firestore_store.get_document("shared_documents", doc_id, user_fb_token=fb_token)
+            if fs_doc:
+                doc_info = {
+                    "doc_id": fs_doc.get("doc_id") or doc_id,
+                    "title": fs_doc.get("title") or f"Protected Document ({doc_id})",
+                    "owner_email": fs_doc.get("owner_email") or "",
+                    "owner_name": fs_doc.get("owner_name") or "",
+                    "classification": fs_doc.get("classification") or "CONFIDENTIAL",
+                }
+            else:
+                doc_info = {
+                    "doc_id": doc_id,
+                    "title": f"Protected Document ({doc_id})",
+                    "owner_email": "",
+                    "owner_name": "",
+                    "classification": "CONFIDENTIAL",
+                }
+    finally:
+        conn.close()
+    return {"status": "success", "document": doc_info}
+
+
+@app.post("/api/view/checkin")
+async def view_recipient_checkin(req: ViewCheckinRequest, request: Request):
+    """
+    Authenticates/records downstream recipient identity from /view/{doc_id}?ref={sharer},
+    appends their node to lineage_nodes, logs full telemetry to access_logs, broadcasts live WS alert,
+    and returns the protected content + downstream share link.
+    """
+    init_tracking_db()
+    doc_id = req.doc_id.strip()
+    ref_sharer = req.ref.strip() or "Owner"
+    viewer_name = req.viewer_name.strip()
+    viewer_email = req.viewer_email.strip()
+    if not doc_id or not viewer_name or not viewer_email:
+        raise HTTPException(status_code=400, detail="doc_id, viewer_name, and viewer_email are required.")
+
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    client_ip = _extract_client_ip(request)
+    user_agent = (request.headers.get("user-agent") or "Unknown User-Agent").strip()
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    reverse_host = "unresolved"
+    if client_ip and client_ip != "unknown":
+        try:
+            rdns = await asyncio.wait_for(
+                asyncio.to_thread(socket.gethostbyaddr, client_ip),
+                timeout=0.5,
+            )
+            if rdns and rdns[0]:
+                reverse_host = rdns[0]
+        except Exception:
+            reverse_host = "localhost" if client_ip in ("127.0.0.1", "::1", "testclient") else "unresolved"
+
+    # Fetch protected doc content (SQLite -> Firestore -> fallback)
+    conn = sqlite3.connect(TRACKING_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        doc_row = conn.execute(
+            "SELECT doc_id, title, content, owner_email, owner_name, classification FROM shared_documents WHERE doc_id = ?",
+            (doc_id,),
+        ).fetchone()
+        if doc_row:
+            doc_obj = dict(doc_row)
+        else:
+            fs_doc = firestore_store.get_document("shared_documents", doc_id, user_fb_token=fb_token)
+            if fs_doc:
+                doc_obj = {
+                    "doc_id": fs_doc.get("doc_id") or doc_id,
+                    "title": fs_doc.get("title") or f"Protected Document ({doc_id})",
+                    "content": fs_doc.get("content") or DEFAULT_CONFIDENTIAL_DOCS[0]["content"],
+                    "owner_email": fs_doc.get("owner_email") or ref_sharer,
+                    "owner_name": fs_doc.get("owner_name") or ref_sharer,
+                    "classification": fs_doc.get("classification") or "CONFIDENTIAL",
+                }
+            else:
+                doc_obj = {
+                    "doc_id": doc_id,
+                    "title": f"Confidential Document ({doc_id})",
+                    "content": DEFAULT_CONFIDENTIAL_DOCS[0]["content"],
+                    "owner_email": ref_sharer,
+                    "owner_name": ref_sharer.split("@")[0] if "@" in ref_sharer else ref_sharer,
+                    "classification": "STRICTLY CONFIDENTIAL",
+                }
+    finally:
+        conn.close()
+
+    hop_res = _upsert_real_lineage_hop(
+        doc_id=doc_id,
+        parent_email=ref_sharer,
+        child_email=viewer_email,
+        child_name=viewer_name,
+        ip_address=client_ip,
+        fb_token=fb_token,
+    )
+
+    log_id = _log_beacon_access(
+        doc_id=doc_id,
+        original_sharer=ref_sharer,
+        ip_address=client_ip,
+        reverse_host=reverse_host,
+        user_agent=user_agent,
+        timestamp=timestamp,
+        viewer_email=viewer_email,
+        viewer_name=viewer_name,
+        alert_triggered=True,
+        fb_token=fb_token,
+    )
+
+    alert_payload = {
+        "id": log_id,
+        "event": "BEACON_TRIGGERED",
+        "doc_id": doc_id,
+        "original_sharer": ref_sharer,
+        "viewer_email": viewer_email,
+        "viewer_name": viewer_name,
+        "user_id": ref_sharer,
+        "recipient_id": f"{viewer_name} ({viewer_email}) via {ref_sharer}",
+        "ip_address": client_ip,
+        "reverse_host": reverse_host,
+        "user_agent": user_agent,
+        "timestamp": timestamp,
+        "message": f"Recipient verified & opened {doc_id}: {viewer_name} ({viewer_email})",
+    }
+    await alert_ws_manager.broadcast_alert(alert_payload)
+
+    proto = _get_forwarded_proto(request)
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "leaklens-tyrn.vercel.app"
+    share_url = f"{proto}://{fwd_host}/view/{quote(doc_id)}?ref={quote(viewer_email)}"
+
+    return {
+        "status": "verified",
+        "doc_id": doc_id,
+        "hop_level": hop_res["hop_level"],
+        "ip_address": client_ip,
+        "reverse_host": reverse_host,
+        "document": doc_obj,
+        "share_url": share_url,
+        "lineage": _build_lineage_graph(doc_id, fb_token=fb_token).get("tree", []),
+    }
+
+
+# =====================================================================
+# PILLAR 1 ENDPOINTS: MULTI-HOP LINEAGE & TARDOS LEAK INSPECTION
+# =====================================================================
+class RecordHopRequest(BaseModel):
+    doc_id: str
+    parent_user_id: Optional[str] = None
+    child_user_id: Optional[str] = None
+    parent_email: Optional[str] = None
+    parent_name: Optional[str] = None
+    child_email: Optional[str] = None
+    child_name: Optional[str] = None
+
+
+@app.post("/api/share/record-hop")
+def record_share_hop(req: RecordHopRequest, request: Request):
+    """Records a real downstream P2P transfer hop into lineage_nodes + lineage_ledger + Cloud Firestore."""
+    doc_id = req.doc_id.strip() or "DOC-GENERAL"
+    parent_email = (req.parent_email or req.parent_user_id or "").strip()
+    child_email = (req.child_email or req.child_user_id or "").strip()
+    child_name = (req.child_name or req.child_user_id or child_email).strip()
+    parent_name = (req.parent_name or req.parent_user_id or parent_email).strip()
+
+    if not parent_email or not child_email:
+        raise HTTPException(status_code=400, detail="parent_email/parent_user_id and child_email/child_user_id are required.")
+
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    hop_res = _upsert_real_lineage_hop(
+        doc_id=doc_id,
+        parent_email=parent_email,
+        child_email=child_email,
+        child_name=child_name,
+        parent_name=parent_name,
+        ip_address=_extract_client_ip(request),
+        fb_token=fb_token,
+    )
+
+    return {
+        "status": "SUCCESS",
+        "tx_id": hop_res["tx_id"],
+        "doc_id": doc_id,
+        "parent_user_id": parent_email,
+        "child_user_id": child_email,
+        "parent_email": parent_email,
+        "child_email": child_email,
+        "child_name": child_name,
+        "hop_depth": hop_res["hop_level"],
+        "hop_level": hop_res["hop_level"],
+        "segment_hash": hop_res["segment_hash"],
+        "timestamp": hop_res["timestamp"],
+    }
+
+
+@app.get("/api/lineage/docs")
+def list_tracked_lineage_docs(request: Request):
+    """Returns distinct real tracked document IDs from lineage_nodes, shared_documents, and access_logs."""
+    init_tracking_db()
+    conn = sqlite3.connect(TRACKING_DB_PATH)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT doc_id FROM lineage_nodes
+            UNION
+            SELECT DISTINCT doc_id FROM shared_documents
+            UNION
+            SELECT DISTINCT doc_id FROM access_logs
+            ORDER BY doc_id ASC
+            """
+        ).fetchall()
+        docs = [r[0] for r in rows if r and r[0]]
+    finally:
+        conn.close()
+    return {"status": "success", "documents": docs}
+
+
 @app.get("/api/lineage/trace/{doc_id}")
-def trace_lineage_graph(doc_id: str):
-    """Returns the complete directed multi-hop sharing tree with participant names and emails."""
-    return _build_lineage_graph(doc_id)
+def trace_lineage_graph(doc_id: str, request: Request):
+    """Returns the real directed multi-hop sharing tree with participant names and emails."""
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    return _build_lineage_graph(doc_id, fb_token=fb_token)
 
 
 @app.post("/api/watermark/inspect-leak")
@@ -2356,13 +2834,10 @@ async def inspect_leak_with_tardos(
     if not resolved_doc_id and pdf_res.get("session_id"):
         resolved_doc_id = str(pdf_res["session_id"])
     if not resolved_doc_id:
-        resolved_doc_id = "DOC-HELIOS-2026"
+        resolved_doc_id = "DOC-GENERAL"
 
-    lineage_graph = _build_lineage_graph(resolved_doc_id)
-    if not lineage_graph["chain"] and resolved_doc_id != "DOC-HELIOS-2026":
-        lineage_graph = _build_lineage_graph("DOC-HELIOS-2026")
-        if lineage_graph["chain"]:
-            resolved_doc_id = "DOC-HELIOS-2026"
+    fb_token, _, fb_email, fb_name = _extract_firebase_ctx(request)
+    lineage_graph = _build_lineage_graph(resolved_doc_id, fb_token=fb_token)
 
     # Determine suspected traitor identity from embedded proof / beacon / filename / lineage tail
     identified_user = None
@@ -2372,6 +2847,12 @@ async def inspect_leak_with_tardos(
         forensics["pdf_metadata"].get("/Author", ""),
     ):
         identified_user = _resolve_user_record(candidate_str)
+        if not identified_user and candidate_str:
+            identified_user = {
+                "user_id": candidate_str,
+                "legal_name": candidate_str,
+                "email": candidate_str if "@" in candidate_str else f"{candidate_str.lower()}@leaklens.local",
+            }
         if identified_user:
             break
 
@@ -2384,7 +2865,12 @@ async def inspect_leak_with_tardos(
         }
     if not identified_user:
         users = _fetch_all_users()
-        identified_user = users[-1] if users else {"user_id": "User_15", "legal_name": "Omar Vance (External)", "email": "omar.ext@leaklens.io"}
+        if users:
+            identified_user = users[-1]
+        elif fb_email:
+            identified_user = {"user_id": fb_email, "legal_name": fb_name or fb_email, "email": fb_email}
+        else:
+            identified_user = {"user_id": "Unregistered Recipient", "legal_name": "Unregistered Recipient", "email": "unknown"}
 
     # Construct Tardos vector Y from embedded suspect codeword + file-hash perturbations (simulating collusion/noise)
     p_vec = _tardos_p_vector(TARDOS_M)
@@ -2421,13 +2907,16 @@ async def inspect_leak_with_tardos(
         if node["user_id"] == top_suspect["user_id"]:
             break
     if not lineage_path:
+        root_email = fb_email or "owner@leaklens.local"
+        root_name = fb_name or "Owner (Verified)"
         lineage_path = [
-            {"user_id": "User_0", "legal_name": "Owner (You)", "email": "owner@leaklens.io", "hop_depth": 0},
+            {"user_id": root_email, "legal_name": root_name, "email": root_email, "hop_depth": 0, "hop_level": 0},
             {
                 "user_id": top_suspect["user_id"],
                 "legal_name": top_suspect["legal_name"],
                 "email": top_suspect["email"],
                 "hop_depth": 1,
+                "hop_level": 1,
             },
         ]
 
@@ -2634,9 +3123,9 @@ async def inspect_pdf_endpoint(request: Request, file: UploadFile = File(...)):
     pdf_bytes = await file.read()
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
-    sb_token, _, _ = _extract_supabase_ctx(request)
-    res = inspect_pdf_bytes(pdf_bytes, user_jwt=sb_token)
-    res["supabase_persisted"] = _persist_inspection(res, "PDF Forensic Inspector", request=request)
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
+    res = inspect_pdf_bytes(pdf_bytes, user_jwt=fb_token)
+    res["firestore_persisted"] = _persist_inspection(res, "PDF Forensic Inspector", request=request)
     return res
 
 
@@ -2663,7 +3152,7 @@ def issue_lease_endpoint(req: IssueLeaseRequest, request: Request):
     lease_token = f"{payload}|{sig}"
     rsa_jwt, lease_envelope = issue_rsa_lease_jwt(lease)
 
-    sb_token, owner_id, owner_email = _extract_supabase_ctx(request)
+    fb_token, owner_id, owner_email, _ = _extract_firebase_ctx(request)
     lease_row = {
         "lease_id": lease_id,
         "recipient_id": lease.recipient_id,
@@ -2681,10 +3170,10 @@ def issue_lease_endpoint(req: IssueLeaseRequest, request: Request):
         "ciphertext_preview": f"AES-256-GCM:{base64.b64encode(lease.ciphertext[:24]).decode()}",
     }
     if owner_id:
-        lease_row["owner_id"] = owner_id
+        lease_row["owner_uid"] = owner_id
     if owner_email:
         lease_row["owner_email"] = owner_email
-    persisted = supabase_store.upsert_drm_lease(lease_row, user_jwt=sb_token)
+    persisted = firestore_store.upsert_drm_lease(lease_row, user_fb_token=fb_token)
 
     return {
         "status": "issued",
@@ -2700,29 +3189,29 @@ def issue_lease_endpoint(req: IssueLeaseRequest, request: Request):
         "issued_at_wall": lease.issued_wall,
         "duration_seconds": duration,
         "permission_end_timestamp": lease.issued_wall + duration,
-        "supabase_persisted": persisted,
+        "firestore_persisted": persisted,
     }
 
 
 @app.post("/api/revoke-lease")
 def revoke_lease_endpoint(req: RevokeLeaseRequest, request: Request):
     """
-    Instant Kill-Switch: Immediately zero-fills AES-256-GCM key & plaintext in RAM and Supabase.
+    Instant Kill-Switch: Immediately zero-fills AES-256-GCM key & plaintext in RAM and Cloud Firestore.
     """
     lease_id = req.lease_id
     if not lease_id and req.lease_token and "|" in req.lease_token:
         lease_id = req.lease_token.split("|")[0]
 
-    sb_token, _, _ = _extract_supabase_ctx(request)
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
     if lease_id:
-        supabase_store.update_drm_lease(
+        firestore_store.update_drm_lease(
             lease_id,
             {
                 "revoked": True,
                 "ram_wiped": True,
                 "ram_key_preview": "0x00000000...0000 (ZEROED)",
             },
-            user_jwt=sb_token,
+            user_fb_token=fb_token,
         )
 
     lease = LEASE_REGISTRY.get(lease_id) if lease_id else None
@@ -2749,7 +3238,7 @@ def revoke_lease_endpoint(req: RevokeLeaseRequest, request: Request):
 @app.post("/api/challenge-qr-renewal")
 def challenge_qr_renewal_endpoint(req: QrChallengeRequest, request: Request):
     """
-    Generates an air-gapped cryptographic QR challenge and persists it in Supabase.
+    Generates an air-gapped cryptographic QR challenge and persists it in Cloud Firestore.
     """
     challenge_code = f"QR-{secrets.token_hex(4).upper()}"
     nonce = secrets.token_hex(8)
@@ -2762,7 +3251,7 @@ def challenge_qr_renewal_endpoint(req: QrChallengeRequest, request: Request):
         "rsa_alg": "RS256",
     }
     QR_CHALLENGES[challenge_code] = challenge_payload
-    sb_token, owner_id, _ = _extract_supabase_ctx(request)
+    fb_token, owner_id, _, _ = _extract_firebase_ctx(request)
     row = {
         "challenge_code": challenge_code,
         "recipient_id": req.recipient_id,
@@ -2773,26 +3262,26 @@ def challenge_qr_renewal_endpoint(req: QrChallengeRequest, request: Request):
         "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 120)),
     }
     if owner_id:
-        row["owner_id"] = owner_id
-    persisted = supabase_store.create_qr_challenge(row, user_jwt=sb_token)
+        row["owner_uid"] = owner_id
+    persisted = firestore_store.create_qr_challenge(row, user_fb_token=fb_token)
     return {
         "status": "challenge_ready",
         "challenge_code": challenge_code,
         "qr_payload": json.dumps(challenge_payload),
         "expires_in_seconds": 120,
-        "supabase_persisted": persisted,
+        "firestore_persisted": persisted,
     }
 
 
 @app.post("/api/complete-qr-renewal")
 def complete_qr_renewal_endpoint(req: QrCompleteRequest, request: Request):
-    """Verifies the offline QR challenge code (RAM or Supabase) and issues a fresh Monotonic AES-256-GCM lease."""
-    sb_token, _, _ = _extract_supabase_ctx(request)
+    """Verifies the offline QR challenge code (RAM or Cloud Firestore) and issues a fresh Monotonic AES-256-GCM lease."""
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
     challenge = QR_CHALLENGES.pop(req.challenge_code, None)
     if challenge:
-        supabase_store.consume_qr_challenge(req.challenge_code, user_jwt=sb_token)
+        firestore_store.consume_qr_challenge(req.challenge_code, user_fb_token=fb_token)
     else:
-        db_challenge = supabase_store.consume_qr_challenge(req.challenge_code, user_jwt=sb_token)
+        db_challenge = firestore_store.consume_qr_challenge(req.challenge_code, user_fb_token=fb_token)
         if db_challenge:
             challenge = {
                 "recipient_id": db_challenge["recipient_id"],
@@ -2816,11 +3305,11 @@ def validate_lease_endpoint(req: LeaseRequest, request: Request):
     """
     Enterprise DRM Validation:
     - Verifies RSA-256 JWT or HMAC lease token
-    - Evaluates MonotonicDRMLease (time.monotonic() delta) and Supabase revocation ledger
+    - Evaluates MonotonicDRMLease (time.monotonic() delta) and Firestore revocation ledger
     - Detects OS wall-clock rollbacks and immediately zero-fills AES-256-GCM RAM buffers
     """
     current_wall = time.time()
-    sb_token, _, _ = _extract_supabase_ctx(request)
+    fb_token, _, _, _ = _extract_firebase_ctx(request)
     rsa_verified = False
     rsa_claims = None
 
@@ -2880,10 +3369,10 @@ def validate_lease_endpoint(req: LeaseRequest, request: Request):
         if lease:
             if req.simulated_clock_offset_seconds < -5.0 or lease.tamper_detected:
                 lease.revoke(tamper=True)
-                supabase_store.update_drm_lease(
+                firestore_store.update_drm_lease(
                     lease_id,
                     {"revoked": True, "tamper_detected": True, "ram_wiped": True, "ram_key_preview": lease.get_ram_key_preview()},
-                    user_jwt=sb_token,
+                    user_fb_token=fb_token,
                 )
                 return {
                     "access_allowed": False,
@@ -2906,10 +3395,10 @@ def validate_lease_endpoint(req: LeaseRequest, request: Request):
                 lease.zero_fill_wipe()
                 status["ram_wiped"] = True
                 status["ram_key_preview"] = lease.get_ram_key_preview()
-                supabase_store.update_drm_lease(
+                firestore_store.update_drm_lease(
                     lease_id,
                     {"ram_wiped": True, "ram_key_preview": status["ram_key_preview"]},
-                    user_jwt=sb_token,
+                    user_fb_token=fb_token,
                 )
 
             if lease.revoked:
@@ -2937,7 +3426,7 @@ def validate_lease_endpoint(req: LeaseRequest, request: Request):
                 "status_message": msg,
             }
         else:
-            db_lease = supabase_store.get_drm_lease(lease_id, user_jwt=sb_token)
+            db_lease = firestore_store.get_drm_lease(lease_id, user_fb_token=fb_token)
             effective_elapsed = req.client_elapsed_seconds if req.client_elapsed_seconds is not None else max(0.0, current_wall - float(issued_wall_str))
             if db_lease and (db_lease.get("revoked") or db_lease.get("tamper_detected") or db_lease.get("ram_wiped")):
                 return {
@@ -2956,10 +3445,10 @@ def validate_lease_endpoint(req: LeaseRequest, request: Request):
                     else "ACCESS REVOKED / RAM KEY ZEROED",
                 }
             if req.simulated_clock_offset_seconds < -5.0:
-                supabase_store.update_drm_lease(
+                firestore_store.update_drm_lease(
                     lease_id,
                     {"revoked": True, "tamper_detected": True, "ram_wiped": True, "ram_key_preview": "0x00000000...0000 (ZEROED)"},
-                    user_jwt=sb_token,
+                    user_fb_token=fb_token,
                 )
                 return {
                     "access_allowed": False,
@@ -3072,12 +3561,6 @@ class FirebaseAuthRequest(BaseModel):
     id_token: str
 
 
-class SupabaseAuthRequest(BaseModel):
-    email: str
-    password: str
-    name: Optional[str] = None
-
-
 def create_jwt_token(email: str, name: str, picture: str = "") -> str:
     """Generates an application session token valid for 24 hours."""
     payload = {
@@ -3168,55 +3651,9 @@ def firebase_auth_endpoint(req: FirebaseAuthRequest, request: Request):
         raise HTTPException(status_code=401, detail=f"Firebase authentication failed: {str(e)}")
 
 
-@app.post("/api/auth/supabase/signup")
-def supabase_signup_endpoint(req: SupabaseAuthRequest):
-    """Registers an operator account in Supabase Auth and returns a LeakLens session if confirmed."""
-    status_code, data = supabase_store.sign_up_password(req.email.strip(), req.password, req.name or "")
-    if status_code >= 400:
-        msg = data.get("msg") or data.get("error_description") or data.get("message") or "Supabase sign-up failed."
-        raise HTTPException(status_code=status_code, detail=msg)
-    sb_access_token = data.get("access_token")
-    user_obj = data.get("user") or {}
-    email = user_obj.get("email") or req.email.strip()
-    name = (user_obj.get("user_metadata") or {}).get("name") or req.name or email.split("@")[0]
-    if sb_access_token:
-        return {
-            "status": "success",
-            "confirmation_required": False,
-            "access_token": create_jwt_token(email, name),
-            "supabase_access_token": sb_access_token,
-            "user": {"email": email, "name": name, "picture": ""},
-        }
-    return {
-        "status": "pending_confirmation",
-        "confirmation_required": True,
-        "message": f"Verification email sent to {email}. Confirm your inbox then sign in.",
-        "user": {"email": email, "name": name, "picture": ""},
-    }
-
-
-@app.post("/api/auth/supabase/signin")
-def supabase_signin_endpoint(req: SupabaseAuthRequest):
-    """Authenticates via Supabase Auth and returns LeakLens JWT + RLS-scoped Supabase access token."""
-    status_code, data = supabase_store.sign_in_password(req.email.strip(), req.password)
-    if status_code >= 400:
-        msg = data.get("msg") or data.get("error_description") or data.get("message") or "Supabase sign-in failed."
-        raise HTTPException(status_code=status_code, detail=msg)
-    sb_access_token = data.get("access_token")
-    user_obj = data.get("user") or {}
-    email = user_obj.get("email") or req.email.strip()
-    name = (user_obj.get("user_metadata") or {}).get("name") or email.split("@")[0]
-    return {
-        "status": "success",
-        "access_token": create_jwt_token(email, name),
-        "supabase_access_token": sb_access_token,
-        "user": {"email": email, "name": name, "picture": ""},
-    }
-
-
 @app.get("/api/auth/me")
 def get_current_user(authorization: str = Header(None)):
-    """Validates active user session from Bearer token."""
+    """Validates active user session from Bearer JWT or Firebase ID token."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization header.")
 
@@ -3253,18 +3690,6 @@ def get_current_user(authorization: str = Header(None)):
         except Exception:
             pass
 
-        sb_user = supabase_store.verify_user_jwt(token)
-        if sb_user and sb_user.get("email"):
-            meta = sb_user.get("user_metadata") or {}
-            return {
-                "status": "authenticated",
-                "provider": "supabase",
-                "user": {
-                    "email": sb_user["email"],
-                    "name": meta.get("name") or sb_user["email"].split("@")[0],
-                    "picture": meta.get("avatar_url", ""),
-                },
-            }
         raise HTTPException(status_code=401, detail="Invalid session token.")
 
 
