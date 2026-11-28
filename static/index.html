@@ -1709,8 +1709,8 @@
                                             <th style="padding:8px 10px;">Timestamp</th>
                                             <th style="padding:8px 10px;">Document ID</th>
                                             <th style="padding:8px 10px;">Original Sharer</th>
-                                            <th style="padding:8px 10px;">Viewer (Name / Email)</th>
-                                            <th style="padding:8px 10px;">Resolved Hostname / IP</th>
+                                            <th style="padding:8px 10px;">Viewer Email / Name</th>
+                                            <th style="padding:8px 10px;">Client IP</th>
                                             <th style="padding:8px 10px;">Device User-Agent</th>
                                             <th style="padding:8px 10px;">Status</th>
                                         </tr>
@@ -3357,16 +3357,20 @@
                 return;
             }
             tbody.innerHTML = records.map((r) => {
-                const viewerLabel = (r.viewer_name || r.viewer_email)
-                    ? `${r.viewer_name ? `${r.viewer_name} ` : ''}${r.viewer_email ? `(${r.viewer_email})` : ''}`.trim()
+                const viewerLabel = (r.viewer_email || r.viewer_name)
+                    ? `${r.viewer_email || ''}${r.viewer_email && r.viewer_name ? ' / ' : ''}${r.viewer_name || ''}`
                     : 'PDF / Pixel Open';
+                const ipEsc = String(r.ip_address || 'unknown').replace(/</g, '&lt;');
+                const hostHtml = (r.reverse_host && r.reverse_host !== 'unresolved')
+                    ? ` <span style="color:#94a3b8; font-size:10px;">(${String(r.reverse_host).replace(/</g, '&lt;')})</span>`
+                    : '';
                 return `
                     <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
                         <td style="padding:8px 10px; white-space:nowrap;">${new Date(r.timestamp).toLocaleString()}</td>
                         <td style="padding:8px 10px; color:#9A82FF;">${String(r.doc_id || '').replace(/</g, '&lt;')}</td>
                         <td style="padding:8px 10px; color:var(--teal);">${String(r.original_sharer || r.user_id || r.original_recipient_id || r.recipient_id || '—').replace(/</g, '&lt;')}</td>
                         <td style="padding:8px 10px; color:#E2E8F0;">${String(viewerLabel).replace(/</g, '&lt;')}</td>
-                        <td style="padding:8px 10px; color:var(--gold);">${String(r.reverse_host && r.reverse_host !== 'unresolved' ? `${r.reverse_host} (${r.ip_address})` : (r.ip_address || '')).replace(/</g, '&lt;')}</td>
+                        <td style="padding:8px 10px; color:var(--gold);" title="${String(r.reverse_host || '').replace(/"/g, '&quot;')}">${ipEsc}${hostHtml}</td>
                         <td style="padding:8px 10px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${String(r.user_agent || '').replace(/</g, '&lt;')}</td>
                         <td style="padding:8px 10px; color:#FF6B84; font-weight:700;">${r.alert_triggered === false ? 'LOGGED' : '🚨 ALERT'}</td>
                     </tr>
@@ -3552,7 +3556,16 @@
                     const inp = document.getElementById('shareLinkPreview');
                     if (inp) inp.value = viewUrl;
                     refreshLineageChain();
-        updateShareLinkPreview();
+                }
+                const hasRoot = (window.__latestLineageChain || []).some((n, i) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? i) === 0);
+                if (!hasRoot) {
+                    await window.__leaklensPushLineageNode?.({
+                        doc_id: docId,
+                        parent_email: email,
+                        child_email: email,
+                        child_name: name,
+                        hop_level: 0
+                    }).catch(() => {});
                 }
             } catch {}
 
@@ -3969,27 +3982,43 @@
         function renderLineageStripNodes(nodes) {
             const strip = document.getElementById('lineageChainStrip');
             if (!strip) return;
-            const docId = (document.getElementById('lineageDocInput')?.value || 'DOC-2026-Q4').trim();
-            if (!nodes || !nodes.length) {
-                const { name, email } = getActiveOwnerIdentity();
-                strip.innerHTML = `<div style="min-width:190px; flex-shrink:0; padding:8px 10px; border-radius:10px; border:1px solid rgba(43,216,200,0.35); background:rgba(8,8,14,0.84);"><div style="color:var(--teal); font-weight:700;">[Owner: ${String(name).replace(/</g, '&lt;')}]</div><div style="color:var(--text-muted); font-size:10px; margin-top:2px;">${String(email).replace(/</g, '&lt;')}</div></div><span style="color:var(--text-muted); margin-left:6px;">No downstream hops recorded yet for ${String(docId).replace(/</g, '&lt;')}. Share via WhatsApp/Email or click + Record Hop.</span>`;
+            const capped = (nodes || []).filter((n, idx) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx) <= 15);
+            window.__latestLineageChain = capped;
+            if (!capped.length) {
+                strip.innerHTML = '<span style="color:var(--text-muted);">No downstream shares recorded yet. Share your WhatsApp link to track hops.</span>';
                 return;
             }
-            strip.innerHTML = nodes.map((n, idx) => {
-                const isLast = idx === nodes.length - 1;
-                const hop = n.hop_level ?? n.hop_depth ?? idx;
+            const hasRoot = capped.some((n, i) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? i) === 0);
+            const owner = getActiveOwnerIdentity();
+            const renderList = hasRoot ? capped : [{
+                parent_email: capped[0]?.parent_email || owner.email,
+                child_email: owner.email || capped[0]?.parent_email || 'owner@leaklens.local',
+                child_name: owner.name || owner.email,
+                hop_level: 0,
+                timestamp: capped[0]?.timestamp || null
+            }, ...capped];
+            const cardsHtml = renderList.map((n, idx) => {
+                const isLast = idx === renderList.length - 1;
+                const hop = n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx;
                 const displayName = n.child_name || n.legal_name || n.user_id || 'Participant';
                 const displayEmail = n.child_email || n.email || '';
-                const arrow = idx > 0 ? '<span style="color:var(--violet); font-weight:700;">➔</span>' : '';
-                const label = hop === 0 ? `[Owner: ${displayName}]` : `[Hop ${hop}: ${displayName}]`;
+                const arrow = idx > 0 ? '<span style="color:var(--violet); font-weight:700; flex-shrink:0;">➔</span>' : '';
+                const label = hop === 0
+                    ? `[Owner: ${displayName}${displayEmail ? ` (${displayEmail})` : ''}]`
+                    : `[Hop ${hop}: ${displayName}${displayEmail ? ` (${displayEmail})` : ''}]`;
                 const border = isLast && hop > 0 ? 'rgba(255,59,92,0.55)' : 'rgba(43,216,200,0.35)';
                 const color = isLast && hop > 0 ? '#FF8DA1' : 'var(--teal)';
-                return `${arrow}<div style="min-width:175px; flex-shrink:0; padding:8px 10px; border-radius:10px; border:1px solid ${border}; background:rgba(8,8,14,0.84);"><div style="color:${color}; font-weight:700;">${String(label).replace(/</g, '&lt;')}</div><div style="color:var(--text-muted); font-size:10px; margin-top:2px;">${String(displayEmail).replace(/</g, '&lt;')}</div><div style="color:#64748b; font-size:9.5px; margin-top:2px;">${n.timestamp ? new Date(n.timestamp).toLocaleTimeString() : 'Verified'}</div></div>`;
+                return `${arrow}<div style="min-width:205px; flex-shrink:0; padding:8px 10px; border-radius:10px; border:1px solid ${border}; background:rgba(8,8,14,0.84);"><div style="color:${color}; font-weight:700; line-height:1.35;">${String(label).replace(/</g, '&lt;')}</div><div style="color:#64748b; font-size:9.5px; margin-top:4px;">${n.timestamp ? new Date(n.timestamp).toLocaleTimeString() : 'Verified'}</div></div>`;
             }).join('');
+            const onlyOwner = renderList.every((n, idx) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx) === 0);
+            strip.innerHTML = onlyOwner
+                ? `${cardsHtml}<span style="color:var(--violet); font-weight:700; flex-shrink:0;">➔</span><span style="color:var(--text-muted); white-space:nowrap;">No downstream shares recorded yet. Share your WhatsApp link to track hops.</span>`
+                : cardsHtml;
         }
 
         async function refreshLineageChain() {
             const docId = (document.getElementById('lineageDocInput')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
+            window.__leaklensWatchLineageDoc?.(docId);
             try {
                 const resp = await apiFetch(`/api/lineage/trace/${encodeURIComponent(docId)}`);
                 if (!resp.ok) return;
@@ -4007,8 +4036,9 @@
                 alert('Enter recipient name or email to record a real downstream hop.');
                 return;
             }
+            const childName = childId.includes('@') ? childId.split('@')[0] : childId;
             try {
-                await apiFetch('/api/share/record-hop', {
+                const resp = await apiFetch('/api/share/record-hop', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -4016,9 +4046,25 @@
                         parent_email: parentId,
                         parent_name: getActiveOwnerIdentity().name,
                         child_email: childId,
-                        child_name: childId.includes('@') ? childId.split('@')[0] : childId
+                        child_name: childName
                     })
                 });
+                const existingMax = (window.__latestLineageChain || []).reduce(
+                    (mx, n, idx) => Math.max(mx, n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx),
+                    0
+                );
+                let hopLevel = Math.min(15, existingMax + 1);
+                if (resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    if (typeof data?.hop_level === 'number') hopLevel = Math.min(15, data.hop_level);
+                }
+                await window.__leaklensPushLineageNode?.({
+                    doc_id: docId,
+                    parent_email: parentId,
+                    child_email: childId,
+                    child_name: childName,
+                    hop_level: hopLevel
+                }).catch(() => {});
                 await refreshLineageChain();
             } catch {}
         }
@@ -4635,6 +4681,43 @@
                 });
             };
 
+            window.__leaklensPushLineageNode = async ({ doc_id, parent_email, child_email, child_name, hop_level }) => {
+                const u = fbAuth.currentUser;
+                if (!u) return;
+                await addDoc(collection(fbDb, 'lineage_nodes'), {
+                    doc_id: doc_id || 'DOC-2026-Q4',
+                    parent_email: parent_email || u.email || 'owner@leaklens.local',
+                    child_email,
+                    child_name: child_name || child_email,
+                    hop_level: Number(hop_level || 1),
+                    timestamp: new Date().toISOString(),
+                    owner_uid: u.uid
+                });
+            };
+
+            const attachLineageWatcher = (docIdOverride) => {
+                if (unsubLineage) { unsubLineage(); unsubLineage = null; }
+                if (!fbAuth.currentUser?.email) return;
+                const activeDoc = (docIdOverride || document.getElementById('lineageDocInput')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
+                const linQ = query(
+                    collection(fbDb, 'lineage_nodes'),
+                    where('doc_id', '==', activeDoc),
+                    orderBy('hop_level', 'asc'),
+                    limit(50)
+                );
+                unsubLineage = onSnapshot(linQ, (snap) => {
+                    if (!snap.empty) {
+                        renderLineageStripNodes(snap.docs.map((d) => d.data()));
+                    }
+                }, () => {});
+            };
+            window.__leaklensWatchLineageDoc = attachLineageWatcher;
+            document.getElementById('lineageDocInput')?.addEventListener('change', (e) => {
+                renderLineageStripNodes([]);
+                refreshLineageChain();
+                attachLineageWatcher(e.target.value);
+            });
+
             onAuthStateChanged(fbAuth, async (user) => {
                 if (unsubLogs) { unsubLogs(); unsubLogs = null; }
                 if (unsubLineage) { unsubLineage(); unsubLineage = null; }
@@ -4667,8 +4750,10 @@
                                     const toast = document.getElementById('webhookToast');
                                     const toastBody = document.getElementById('webhookToastBody');
                                     if (toast && toastBody && newest.alert_triggered !== false) {
-                                        const who = newest.viewer_name ? `${newest.viewer_name} (${newest.viewer_email || ''})` : (newest.original_sharer || 'Unknown');
-                                        toastBody.textContent = `🚨 Live Firestore Alert | Doc: ${newest.doc_id} | Viewer/Sharer: ${who} | Host/IP: ${newest.reverse_host || 'unresolved'} (${newest.ip_address}) | ${new Date(newest.timestamp).toLocaleString()}`;
+                                        const who = newest.viewer_email || newest.viewer_name
+                                            ? `${newest.viewer_email || ''}${newest.viewer_email && newest.viewer_name ? ' / ' : ''}${newest.viewer_name || ''}`
+                                            : (newest.original_sharer || 'Unknown');
+                                        toastBody.textContent = `🚨 Live Firestore Alert | Doc: ${newest.doc_id} | Viewer/Sharer: ${who} | Client IP: ${newest.ip_address} | ${new Date(newest.timestamp).toLocaleString()}`;
                                         toast.classList.add('show');
                                         clearTimeout(webhookTimer);
                                         webhookTimer = setTimeout(() => toast.classList.remove('show'), 9000);
@@ -4682,18 +4767,7 @@
                         updateTelemetryBadgeState();
                     });
 
-                    const activeDoc = (document.getElementById('lineageDocInput')?.value || 'DOC-2026-Q4').trim() || 'DOC-2026-Q4';
-                    const linQ = query(
-                        collection(fbDb, 'lineage_nodes'),
-                        where('doc_id', '==', activeDoc),
-                        orderBy('hop_level', 'asc'),
-                        limit(50)
-                    );
-                    unsubLineage = onSnapshot(linQ, (snap) => {
-                        if (!snap.empty) {
-                            renderLineageStripNodes(snap.docs.map((d) => d.data()));
-                        }
-                    }, () => {});
+                    attachLineageWatcher();
                 } catch {}
             });
         } catch {}

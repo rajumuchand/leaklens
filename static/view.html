@@ -279,13 +279,16 @@
                 strip.innerHTML = '<span style="color:#64748b;">Lineage chain will appear once verified.</span>';
                 return;
             }
-            strip.innerHTML = nodes.map((n, idx) => {
+            strip.innerHTML = nodes.slice(0, 16).map((n, idx) => {
                 const arrow = idx > 0 ? '<span style="color:#7B5CFA; font-weight:700;">➔</span>' : '';
                 const name = n.child_name || n.legal_name || n.user_id || 'Participant';
                 const email = n.child_email || n.email || '';
-                const hop = n.hop_level ?? n.hop_depth ?? idx;
+                const hop = n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx;
                 const isLast = idx === nodes.length - 1;
-                return `${arrow}<div style="min-width:170px; flex-shrink:0; padding:8px 10px; border-radius:10px; border:1px solid ${isLast ? 'rgba(255,59,92,0.5)' : 'rgba(43,216,200,0.35)'}; background:rgba(8,8,14,0.85);"><div style="color:${isLast ? '#FF8DA1' : '#2BD8C8'}; font-weight:700;">${hop === 0 ? `Owner: ${name}` : `Hop ${hop}: ${name}`}</div><div style="color:#94a3b8; font-size:10px; margin-top:2px;">${email}</div></div>`;
+                const title = hop === 0
+                    ? `[Owner: ${name}${email ? ` (${email})` : ''}]`
+                    : `[Hop ${hop}: ${name}${email ? ` (${email})` : ''}]`;
+                return `${arrow}<div style="min-width:205px; flex-shrink:0; padding:8px 10px; border-radius:10px; border:1px solid ${isLast ? 'rgba(255,59,92,0.5)' : 'rgba(43,216,200,0.35)'}; background:rgba(8,8,14,0.85);"><div style="color:${isLast ? '#FF8DA1' : '#2BD8C8'}; font-weight:700; line-height:1.35;">${String(title).replace(/</g, '&lt;')}</div></div>`;
             }).join('');
         }
 

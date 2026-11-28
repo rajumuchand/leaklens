@@ -25,6 +25,8 @@ interface WatermarkResponse {
 }
 
 interface LineageHop {
+    doc_id?: string
+    docId?: string
     user_id?: string
     legal_name?: string
     email?: string
@@ -33,6 +35,7 @@ interface LineageHop {
     child_name?: string
     hop_depth?: number
     hop_level?: number
+    hopLevel?: number
     ip_address?: string | null
     timestamp?: string | null
     segment_hash?: string
@@ -419,7 +422,8 @@ export default function LeakLensDashboard(props: {
     const [telemetryLogs, setTelemetryLogs] = React.useState<BeaconAlert[]>([])
     const [isLoadingHistory, setIsLoadingHistory] = React.useState(false)
     const [lineageDocId, setLineageDocId] = React.useState("DOC-2026-Q4")
-    const [lineageNodes, setLineageNodes] = React.useState<LineageHop[]>([])
+    const activeDocId = lineageDocId.trim() || "DOC-2026-Q4"
+    const [lineageChain, setLineageChain] = React.useState<LineageHop[]>([])
     const [hopParentId, setHopParentId] = React.useState("")
     const [hopChildId, setHopChildId] = React.useState("")
     const [isRecordingHop, setIsRecordingHop] = React.useState(false)
@@ -785,46 +789,49 @@ export default function LeakLensDashboard(props: {
 
     const fetchLineageGraph = React.useCallback(
         async (docIdOverride?: string) => {
-            const doc = (docIdOverride ?? lineageDocId).trim() || "DOC-2026-Q4"
+            const doc = (docIdOverride ?? activeDocId).trim() || "DOC-2026-Q4"
             try {
                 const resp = await fetch(`${resolveEffectiveBackendBase()}/api/lineage/trace/${encodeURIComponent(doc)}`, {
                     headers: buildApiHeaders(),
                 })
                 if (resp.ok) {
                     const data = await resp.json()
-                    const rows = Array.isArray(data?.tree) && data.tree.length > 0 ? data.tree : (data?.chain || [])
-                    setLineageNodes(rows)
+                    const rows = (Array.isArray(data?.tree) && data.tree.length > 0 ? data.tree : (data?.chain || [])) as LineageHop[]
+                    setLineageChain(rows.filter((n, idx) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx) <= 15))
                 }
             } catch {}
         },
-        [lineageDocId, resolveEffectiveBackendBase, buildApiHeaders]
+        [activeDocId, resolveEffectiveBackendBase, buildApiHeaders]
     )
 
-    // Real-time Firestore listener on lineage_nodes + initial fetch
+    // Dynamic Multi-Hop Lineage Firestore listener on lineage_nodes + initial fetch
     useEffect(() => {
+        setLineageChain([])
         fetchTrackingHistory(trackingDocId)
-        fetchLineageGraph(lineageDocId)
-        const doc = lineageDocId.trim() || "DOC-2026-Q4"
-        const linQ = query(
+        fetchLineageGraph(activeDocId)
+        const q = query(
             collection(db, "lineage_nodes"),
-            where("doc_id", "==", doc),
+            where("doc_id", "==", activeDocId),
             orderBy("hop_level", "asc")
         )
         const unsubscribe = onSnapshot(
-            linQ,
-            (snap) => {
-                if (!snap.empty) {
-                    setLineageNodes(snap.docs.map((d) => d.data() as LineageHop))
+            q,
+            (snapshot) => {
+                const nodes = snapshot.docs
+                    .map((doc) => doc.data() as LineageHop)
+                    .filter((n, idx) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx) <= 15)
+                if (nodes.length > 0) {
+                    setLineageChain(nodes)
                 }
             },
             () => {}
         )
         return () => unsubscribe()
-    }, [lineageDocId, trackingDocId, fetchLineageGraph, fetchTrackingHistory])
+    }, [activeDocId, trackingDocId, fetchLineageGraph, fetchTrackingHistory])
 
     const handleShareProtectedLink = React.useCallback(
         async (channel: "copy" | "whatsapp" | "email") => {
-            const doc = (sessionId || lineageDocId || "DOC-2026-Q4").trim()
+            const doc = (sessionId || activeDocId || "DOC-2026-Q4").trim()
             const ownerEmail = authUser?.email || recipientId || "owner@leaklens.local"
             const ownerName = authUser?.name || (ownerEmail.includes("@") ? ownerEmail.split("@")[0] : ownerEmail)
             const content = watermarkResult?.watermarked_text || textInput
@@ -852,6 +859,17 @@ export default function LeakLensDashboard(props: {
                     setLineageDocId(doc)
                     await fetchLineageGraph(doc)
                 }
+                if (auth.currentUser && !lineageChain.some((n, i) => (n.doc_id || n.docId || doc) === doc && (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? i) === 0)) {
+                    await addDoc(collection(db, "lineage_nodes"), {
+                        doc_id: doc,
+                        parent_email: ownerEmail,
+                        child_email: ownerEmail,
+                        child_name: ownerName,
+                        hop_level: 0,
+                        timestamp: new Date().toISOString(),
+                        owner_uid: auth.currentUser.uid,
+                    }).catch(() => {})
+                }
             } catch {}
 
             if (channel === "copy") {
@@ -865,7 +883,7 @@ export default function LeakLensDashboard(props: {
                 setShareStatusMsg(`✓ Email draft ready for ${doc}.`)
             }
         },
-        [sessionId, lineageDocId, authUser, recipientId, watermarkResult, textInput, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph]
+        [sessionId, activeDocId, authUser, recipientId, watermarkResult, textInput, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph]
     )
 
     const handleRecordHop = React.useCallback(async () => {
@@ -878,23 +896,38 @@ export default function LeakLensDashboard(props: {
                 method: "POST",
                 headers: buildApiHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({
-                    doc_id: lineageDocId.trim() || "DOC-2026-Q4",
+                    doc_id: activeDocId,
                     parent_email: parentVal,
                     parent_name: authUser?.name || parentVal,
                     child_email: childVal,
                     child_name: childVal.includes("@") ? childVal.split("@")[0] : childVal,
                 }),
             })
+            let nextHop = Math.min(
+                15,
+                lineageChain.reduce((mx, n, idx) => Math.max(mx, n.hop_level ?? n.hopLevel ?? n.hop_depth ?? idx), 0) + 1
+            )
             if (resp.ok) {
-                await fetchLineageGraph(lineageDocId)
+                const data = await resp.json().catch(() => ({}))
+                if (typeof data?.hop_level === "number") {
+                    nextHop = Math.min(15, data.hop_level)
+                }
+                await fetchLineageGraph(activeDocId)
+            }
+            if (auth.currentUser) {
+                await addDoc(collection(db, "lineage_nodes"), {
+                    doc_id: activeDocId,
+                    parent_email: parentVal,
+                    child_email: childVal,
+                    child_name: childVal.includes("@") ? childVal.split("@")[0] : childVal,
+                    hop_level: nextHop,
+                    timestamp: new Date().toISOString(),
+                    owner_uid: auth.currentUser.uid,
+                }).catch(() => {})
             }
         } catch {}
         setIsRecordingHop(false)
-    }, [lineageDocId, hopParentId, hopChildId, authUser, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph])
-
-    React.useEffect(() => {
-        fetchLineageGraph(lineageDocId)
-    }, [lineageDocId, fetchLineageGraph])
+    }, [activeDocId, hopParentId, hopChildId, lineageChain, authUser, resolveEffectiveBackendBase, buildApiHeaders, fetchLineageGraph])
 
     // --- TAB 1: CALL /api/watermark (with offline client-side fallback) ---
     const handleGenerateWatermark = async () => {
@@ -1318,7 +1351,7 @@ export default function LeakLensDashboard(props: {
             }
             setInspectResult(normalized)
             if (Array.isArray(data.lineage_path) && data.lineage_path.length > 0) {
-                setLineageNodes(data.lineage_path)
+                setLineageChain(data.lineage_path)
             }
             setApiStatus("online")
         } catch {
@@ -2457,7 +2490,7 @@ export default function LeakLensDashboard(props: {
                                     🕸 Multi-Hop Lineage Chain Tree (Real Multi-User Tracking)
                                 </div>
                                 <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginTop: 2 }}>
-                                    Document: {lineageDocId} • {lineageNodes.length} Real Participant{lineageNodes.length === 1 ? "" : "s"} Tracked
+                                    Document: {activeDocId} • {lineageChain.length} Real Participant{lineageChain.length === 1 ? "" : "s"} Tracked (Up to Hop 15)
                                 </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -2520,44 +2553,76 @@ export default function LeakLensDashboard(props: {
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", paddingBottom: 6 }}>
-                            {lineageNodes.length === 0 ? (
+                            {lineageChain.length === 0 ? (
                                 <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#94a3b8" }}>
-                                    [Owner: {authUser?.name || "You"} ({authUser?.email || "Sign in"})] — No downstream recipients yet for {lineageDocId}. Share the /view link via WhatsApp/Email to append real recipients automatically.
+                                    No downstream shares recorded yet. Share your WhatsApp link to track hops.
                                 </span>
                             ) : (
-                                lineageNodes.map((node, idx) => {
-                                    const hopNum = node.hop_level ?? node.hop_depth ?? idx
-                                    const displayName = node.child_name || node.legal_name || node.user_id || "Participant"
-                                    const displayEmail = node.child_email || node.email || ""
-                                    const isTail = idx === lineageNodes.length - 1 && hopNum > 0
+                                (() => {
+                                    const hasRoot = lineageChain.some((n, i) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? i) === 0)
+                                    const rootFallbackEmail = authUser?.email || lineageChain[0]?.parent_email || "owner@leaklens.local"
+                                    const rootFallbackName = authUser?.name || (rootFallbackEmail.includes("@") ? rootFallbackEmail.split("@")[0] : rootFallbackEmail)
+                                    const renderList: LineageHop[] = hasRoot
+                                        ? lineageChain
+                                        : [
+                                              {
+                                                  doc_id: activeDocId,
+                                                  parent_email: rootFallbackEmail,
+                                                  child_email: rootFallbackEmail,
+                                                  child_name: rootFallbackName,
+                                                  hop_level: 0,
+                                                  timestamp: lineageChain[0]?.timestamp || null,
+                                              },
+                                              ...lineageChain,
+                                          ]
                                     return (
-                                        <React.Fragment key={`${displayEmail}-${hopNum}-${idx}`}>
-                                            {idx > 0 && (
-                                                <span style={{ color: "#7B5CFA", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>➔</span>
+                                        <>
+                                            {renderList.map((node, idx) => {
+                                                const hopNum = node.hop_level ?? node.hopLevel ?? node.hop_depth ?? idx
+                                                const displayName = node.child_name || node.legal_name || node.user_id || "Participant"
+                                                const displayEmail = node.child_email || node.email || ""
+                                                const isTail = idx === renderList.length - 1 && hopNum > 0
+                                                const cardTitle = hopNum === 0
+                                                    ? `[Owner: ${displayName}${displayEmail ? ` (${displayEmail})` : ""}]`
+                                                    : `[Hop ${hopNum}: ${displayName}${displayEmail ? ` (${displayEmail})` : ""}]`
+                                                return (
+                                                    <React.Fragment key={`${displayEmail}-${hopNum}-${idx}`}>
+                                                        {idx > 0 && (
+                                                            <span style={{ color: "#7B5CFA", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>➔</span>
+                                                        )}
+                                                        <div
+                                                            style={{
+                                                                minWidth: 210,
+                                                                flexShrink: 0,
+                                                                padding: "10px 12px",
+                                                                borderRadius: 10,
+                                                                backgroundColor: isTail ? "rgba(255, 59, 92, 0.12)" : "rgba(8, 8, 14, 0.86)",
+                                                                border: `1px solid ${isTail ? "rgba(255, 59, 92, 0.5)" : "rgba(43, 216, 200, 0.28)"}`,
+                                                                fontFamily: "monospace",
+                                                                fontSize: 10.5,
+                                                            }}
+                                                        >
+                                                            <div style={{ color: isTail ? "#FF6B84" : "#2BD8C8", fontWeight: 700, lineHeight: 1.35 }}>
+                                                                {cardTitle}
+                                                            </div>
+                                                            <div style={{ color: "#64748b", marginTop: 4, fontSize: 9.5 }}>
+                                                                {node.timestamp ? new Date(node.timestamp).toLocaleTimeString() : "Verified"}
+                                                            </div>
+                                                        </div>
+                                                    </React.Fragment>
+                                                )
+                                            })}
+                                            {renderList.every((n, i) => (n.hop_level ?? n.hopLevel ?? n.hop_depth ?? i) === 0) && (
+                                                <>
+                                                    <span style={{ color: "#7B5CFA", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>➔</span>
+                                                    <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#94a3b8", whiteSpace: "nowrap" }}>
+                                                        No downstream shares recorded yet. Share your WhatsApp link to track hops.
+                                                    </span>
+                                                </>
                                             )}
-                                            <div
-                                                style={{
-                                                    minWidth: 175,
-                                                    flexShrink: 0,
-                                                    padding: "10px 12px",
-                                                    borderRadius: 10,
-                                                    backgroundColor: isTail ? "rgba(255, 59, 92, 0.12)" : "rgba(8, 8, 14, 0.86)",
-                                                    border: `1px solid ${isTail ? "rgba(255, 59, 92, 0.5)" : "rgba(43, 216, 200, 0.28)"}`,
-                                                    fontFamily: "monospace",
-                                                    fontSize: 10.5,
-                                                }}
-                                            >
-                                                <div style={{ color: isTail ? "#FF6B84" : "#2BD8C8", fontWeight: 700 }}>
-                                                    {hopNum === 0 ? `[Owner: ${displayName}]` : `[Hop ${hopNum}: ${displayName}]`}
-                                                </div>
-                                                <div style={{ color: "#94a3b8", marginTop: 2 }}>{displayEmail}</div>
-                                                <div style={{ color: "#64748b", marginTop: 2, fontSize: 9.5 }}>
-                                                    {node.timestamp ? new Date(node.timestamp).toLocaleTimeString() : "Verified"}
-                                                </div>
-                                            </div>
-                                        </React.Fragment>
+                                        </>
                                     )
-                                })
+                                })()
                             )}
                         </div>
                     </div>
@@ -2677,8 +2742,8 @@ export default function LeakLensDashboard(props: {
                                         <th style={{ padding: "8px 10px" }}>Timestamp</th>
                                         <th style={{ padding: "8px 10px" }}>Document ID</th>
                                         <th style={{ padding: "8px 10px" }}>Original Sharer</th>
-                                        <th style={{ padding: "8px 10px" }}>Viewer (Name / Email)</th>
-                                        <th style={{ padding: "8px 10px" }}>Resolved Hostname / IP</th>
+                                        <th style={{ padding: "8px 10px" }}>Viewer Email / Name</th>
+                                        <th style={{ padding: "8px 10px" }}>Client IP</th>
                                         <th style={{ padding: "8px 10px" }}>Device User-Agent</th>
                                         <th style={{ padding: "8px 10px" }}>Status</th>
                                     </tr>
@@ -2712,14 +2777,15 @@ export default function LeakLensDashboard(props: {
                                                     {log.original_sharer || log.user_id || log.original_recipient_id || log.recipient_id || "—"}
                                                 </td>
                                                 <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>
-                                                    {log.viewer_name || log.viewer_email
-                                                        ? `${log.viewer_name ? `${log.viewer_name} ` : ""}${log.viewer_email ? `(${log.viewer_email})` : ""}`.trim()
+                                                    {log.viewer_email || log.viewer_name
+                                                        ? `${log.viewer_email || ""}${log.viewer_email && log.viewer_name ? " / " : ""}${log.viewer_name || ""}`
                                                         : "PDF / Pixel Open"}
                                                 </td>
-                                                <td style={{ padding: "8px 10px", color: "#FFB627" }}>
-                                                    {log.reverse_host && log.reverse_host !== "unresolved"
-                                                        ? `${log.reverse_host} (${log.ip_address})`
-                                                        : log.ip_address}
+                                                <td style={{ padding: "8px 10px", color: "#FFB627" }} title={log.reverse_host || ""}>
+                                                    {log.ip_address || "unknown"}
+                                                    {log.reverse_host && log.reverse_host !== "unresolved" ? (
+                                                        <span style={{ color: "#94a3b8", fontSize: 10 }}> ({log.reverse_host})</span>
+                                                    ) : null}
                                                 </td>
                                                 <td style={{ padding: "8px 10px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                                     {log.user_agent}
