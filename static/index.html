@@ -3376,21 +3376,14 @@
 
         let seenBeaconLogKeys = new Set();
         let beaconHistoryInitialized = false;
-        let beaconWsConnected = false;
 
         function updateTelemetryBadgeState() {
             const badge = document.getElementById('beaconWsBadge');
             if (!badge) return;
-            if (beaconWsConnected) {
-                badge.textContent = '● WS /ws/alerts CONNECTED';
-                badge.className = 'mono-badge teal';
-            } else if (firestoreSnapshotActive) {
-                badge.textContent = '● FIRESTORE LIVE (onSnapshot)';
-                badge.className = 'mono-badge teal';
-            } else {
-                badge.textContent = '● REALTIME TELEMETRY ACTIVE';
-                badge.className = 'mono-badge teal';
-            }
+            badge.textContent = firestoreSnapshotActive
+                ? '● FIRESTORE LIVE (onSnapshot)'
+                : '● FIRESTORE TELEMETRY STREAM';
+            badge.className = 'mono-badge teal';
         }
 
         async function refreshBeaconHistory() {
@@ -3401,21 +3394,6 @@
                 const data = await resp.json();
                 if (Array.isArray(data?.records)) {
                     const records = data.records;
-                    if (beaconHistoryInitialized && !beaconWsConnected && records.length > 0) {
-                        const newest = records[0];
-                        const key = `${newest.timestamp}|${newest.doc_id}|${newest.ip_address}|${newest.viewer_email || newest.original_sharer || newest.user_id || ''}`;
-                        if (!seenBeaconLogKeys.has(key) && newest.alert_triggered !== false) {
-                            const toast = document.getElementById('webhookToast');
-                            const toastBody = document.getElementById('webhookToastBody');
-                            if (toast && toastBody) {
-                                const who = newest.viewer_name ? `${newest.viewer_name} (${newest.viewer_email || ''})` : (newest.original_sharer || newest.user_id || 'Unknown');
-                                toastBody.textContent = `🚨 Document Leak/Access Alert | Doc: ${newest.doc_id} | Viewer/Sharer: ${who} | Host/IP: ${newest.reverse_host || 'unresolved'} (${newest.ip_address}) | ${new Date(newest.timestamp).toLocaleString()}`;
-                                toast.classList.add('show');
-                                clearTimeout(webhookTimer);
-                                webhookTimer = setTimeout(() => toast.classList.remove('show'), 9000);
-                            }
-                        }
-                    }
                     records.forEach((r) => {
                         seenBeaconLogKeys.add(`${r.timestamp}|${r.doc_id}|${r.ip_address}|${r.viewer_email || r.original_sharer || r.user_id || ''}`);
                     });
@@ -3430,6 +3408,9 @@
             const docId = (docVal && docVal !== 'all') ? docVal : ((document.getElementById('wmSession')?.value || '').trim() || 'DOC-2026-Q4');
             const recId = authedUser?.email || (document.getElementById('wmRecipient')?.value || '').trim() || 'Operator';
             try {
+                if (typeof window.__leaklensPushTelemetry === 'function') {
+                    await window.__leaklensPushTelemetry({ doc_id: docId, original_sharer: recId });
+                }
                 await fetch(resolveApiUrl(`/api/beacon/${encodeURIComponent(docId)}/${encodeURIComponent(recId)}/pixel.png?t=${Date.now()}`), {
                     cache: 'no-store'
                 });
@@ -3437,63 +3418,9 @@
             } catch {}
         }
 
-        (function initBeaconWebSocketAndFirestore() {
+        (function initTelemetryBootstrap() {
             updateTelemetryBadgeState();
-            const baseHttp = resolveApiUrl('/ws/alerts').startsWith('/')
-                ? window.location.origin
-                : CLOUD_BACKEND_ORIGIN;
-            const wsUrl = `${baseHttp.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:')}/ws/alerts`;
-            let ws = null;
-            function connect() {
-                try {
-                    ws = new WebSocket(wsUrl);
-                    ws.onopen = () => {
-                        beaconWsConnected = true;
-                        updateTelemetryBadgeState();
-                    };
-                    ws.onmessage = (evt) => {
-                        try {
-                            const msg = JSON.parse(evt.data);
-                            if (msg?.event === 'BEACON_TRIGGERED') {
-                                beaconLiveAlerts.unshift(msg);
-                                seenBeaconLogKeys.add(`${msg.timestamp}|${msg.doc_id}|${msg.ip_address}|${msg.viewer_email || msg.original_sharer || msg.user_id || ''}`);
-                                const toast = document.getElementById('webhookToast');
-                                const toastBody = document.getElementById('webhookToastBody');
-                                if (toast && toastBody) {
-                                    const who = msg.viewer_name ? `${msg.viewer_name} (${msg.viewer_email || ''})` : (msg.original_sharer || msg.user_id || msg.recipient_id);
-                                    toastBody.textContent = `🚨 Document Leak/Access Alert | Doc: ${msg.doc_id} | Viewer/Sharer: ${who} | Host/IP: ${msg.reverse_host || 'unresolved'} (${msg.ip_address}) | ${new Date(msg.timestamp).toLocaleString()}`;
-                                    toast.classList.add('show');
-                                    clearTimeout(webhookTimer);
-                                    webhookTimer = setTimeout(() => toast.classList.remove('show'), 9000);
-                                }
-                                refreshBeaconHistory();
-                                refreshLineageChain();
-        updateShareLinkPreview();
-                            }
-                        } catch {}
-                    };
-                    ws.onerror = () => {
-                        beaconWsConnected = false;
-                        updateTelemetryBadgeState();
-                    };
-                    ws.onclose = () => {
-                        beaconWsConnected = false;
-                        updateTelemetryBadgeState();
-                        setTimeout(connect, 10000);
-                    };
-                } catch {
-                    updateTelemetryBadgeState();
-                }
-            }
-            connect();
             refreshBeaconHistory();
-            setInterval(() => {
-                if (!beaconWsConnected) {
-                    refreshBeaconHistory();
-                    refreshLineageChain();
-        updateShareLinkPreview();
-                }
-            }, 3000);
         })();
 
         function triggerWebhookAlert(recipientId, sessionId, inlineId) {
@@ -4670,10 +4597,10 @@
         })();
     </script>
     <script type="module">
-        // Cloud Firestore Real-Time onSnapshot Sync when Firebase Client Auth session is active
+        // Cloud Firestore Real-Time onSnapshot Sync on telemetry_logs & lineage_nodes
         import { getApp, getApps, initializeApp } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js';
         import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js';
-        import { getFirestore, collection, query, where, orderBy, limit, onSnapshot, or } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, query, where, orderBy, limit, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js';
 
         const fbConfig = {
             apiKey: 'AIzaSyBpyT_htz0GZaIo0cRwYvosZmBRMKYp9sY',
@@ -4691,6 +4618,23 @@
             let unsubLogs = null;
             let unsubLineage = null;
 
+            window.__leaklensPushTelemetry = async ({ doc_id, original_sharer }) => {
+                const u = fbAuth.currentUser;
+                if (!u) return;
+                await addDoc(collection(fbDb, 'telemetry_logs'), {
+                    doc_id: doc_id || 'DOC-2026-Q4',
+                    original_sharer: original_sharer || u.email || 'Operator',
+                    viewer_email: u.email || null,
+                    viewer_name: u.displayName || null,
+                    ip_address: 'client-triggered',
+                    reverse_host: 'firestore-realtime',
+                    user_agent: navigator.userAgent,
+                    timestamp: new Date().toISOString(),
+                    alert_triggered: true,
+                    owner_uid: u.uid
+                });
+            };
+
             onAuthStateChanged(fbAuth, async (user) => {
                 if (unsubLogs) { unsubLogs(); unsubLogs = null; }
                 if (unsubLineage) { unsubLineage(); unsubLineage = null; }
@@ -4704,22 +4648,35 @@
 
                 try {
                     const logsQ = query(
-                        collection(fbDb, 'access_logs'),
-                        or(
-                            where('owner_uid', '==', user.uid),
-                            where('original_sharer', '==', user.email),
-                            where('viewer_email', '==', user.email)
-                        ),
+                        collection(fbDb, 'telemetry_logs'),
                         orderBy('timestamp', 'desc'),
                         limit(50)
                     );
+                    let firstSnap = true;
                     unsubLogs = onSnapshot(logsQ, (snap) => {
                         firestoreSnapshotActive = true;
                         updateTelemetryBadgeState();
-                        if (!snap.empty) {
-                            const fsRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                        const fsRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                        if (fsRows.length > 0) {
                             renderBeaconTelemetryRows(fsRows);
                         }
+                        if (!firstSnap) {
+                            snap.docChanges().forEach((chg) => {
+                                if (chg.type === 'added') {
+                                    const newest = chg.doc.data();
+                                    const toast = document.getElementById('webhookToast');
+                                    const toastBody = document.getElementById('webhookToastBody');
+                                    if (toast && toastBody && newest.alert_triggered !== false) {
+                                        const who = newest.viewer_name ? `${newest.viewer_name} (${newest.viewer_email || ''})` : (newest.original_sharer || 'Unknown');
+                                        toastBody.textContent = `🚨 Live Firestore Alert | Doc: ${newest.doc_id} | Viewer/Sharer: ${who} | Host/IP: ${newest.reverse_host || 'unresolved'} (${newest.ip_address}) | ${new Date(newest.timestamp).toLocaleString()}`;
+                                        toast.classList.add('show');
+                                        clearTimeout(webhookTimer);
+                                        webhookTimer = setTimeout(() => toast.classList.remove('show'), 9000);
+                                    }
+                                }
+                            });
+                        }
+                        firstSnap = false;
                     }, () => {
                         firestoreSnapshotActive = false;
                         updateTelemetryBadgeState();

@@ -331,7 +331,7 @@
                 if (auth.currentUser) {
                     try {
                         const ts = new Date().toISOString();
-                        await addDoc(collection(db, 'access_logs'), {
+                        await addDoc(collection(db, 'telemetry_logs'), {
                             doc_id: docId,
                             original_sharer: sharerRef,
                             viewer_email: viewerEmail,

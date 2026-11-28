@@ -1,7 +1,7 @@
 {
   "indexes": [
     {
-      "collectionGroup": "access_logs",
+      "collectionGroup": "telemetry_logs",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "doc_id", "order": "ASCENDING" },

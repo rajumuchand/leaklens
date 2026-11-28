@@ -1107,7 +1107,7 @@ def _log_beacon_access(
         conn.close()
 
     firestore_store.add_document(
-        "access_logs",
+        "telemetry_logs",
         {
             "doc_id": doc_id,
             "original_sharer": original_sharer,
@@ -1177,7 +1177,7 @@ def _fetch_beacon_history(doc_id: str, fb_token: Optional[str] = None) -> list[d
     finally:
         conn.close()
 
-    fs_rows = firestore_store.list_collection("access_logs", limit=100, user_fb_token=fb_token)
+    fs_rows = firestore_store.list_collection("telemetry_logs", limit=100, user_fb_token=fb_token)
     if fs_rows:
         seen = {(r["timestamp"], r["doc_id"], r["ip_address"], r.get("viewer_email") or "") for r in records}
         for fr in fs_rows:

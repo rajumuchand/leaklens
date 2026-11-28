@@ -16,11 +16,16 @@ rules_version = '2';
 //   - viewer_name: string | null (optional/nullable, 0..256) - Viewer display name
 //   - ip_address: string (required, 1..128) - Client IP address observed by beacon/access
 //   - reverse_host: string | null (optional/nullable, 0..256) - Reverse DNS hostname
-//   - user_agent: string | null (optional/nullable, 0..512) - Client User-Agent string
+//   - user_agent: string | null (optional/nullable, 0..1024) - Client User-Agent string
 //   - timestamp: timestamp | string (required, <= 64 if string) - Event timestamp
 //   - alert_triggered: bool (required) - Whether alert telemetry triggered
 //   - owner_uid: string (optional, 1..128, immutable, == request.auth.uid on create) - Operator UID
 // Note: Immutable append-only forensic audit log (update/delete denied).
+//
+// Collection: telemetry_logs/{logId}
+// Document ID: Auto-generated telemetry event ID
+// Fields: Same schema as access_logs/{logId} (optional viewer_email/viewer_name/reverse_host/user_agent/owner_uid)
+// Note: Immutable append-only live dashboard telemetry stream (authenticated read/create; update/delete denied).
 //
 // Collection: lineage_nodes/{nodeId}
 // Document ID: Auto-generated or transaction ID
@@ -273,7 +278,7 @@ service cloud.firestore {
              isValidNullableString(data, 'viewer_name', 0, 256) &&
              validStringLength(data, 'ip_address', 1, 128) &&
              isValidNullableString(data, 'reverse_host', 0, 256) &&
-             isValidNullableString(data, 'user_agent', 0, 512) &&
+             isValidNullableString(data, 'user_agent', 0, 1024) &&
              isValidTimestampOrString(data.timestamp) &&
              data.alert_triggered is bool &&
              isValidOptionalString(data, 'owner_uid', 1, 128);
@@ -521,9 +526,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // 1b. Live real-time dashboard telemetry logs (immutable, authenticated read/create)
+    match /telemetry_logs/{logId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() &&
+                       isValidAccessLog(request.resource.data) &&
+                       uidUnchanged();
+
+      allow update, delete: if false;
+    }
+
     // 2. Multi-hop document sharing lineage nodes (append-only ledger)
     match /lineage_nodes/{nodeId} {
-      allow read: if hasTokenEmail();
+      allow read: if isAuthenticated();
 
       allow create: if isAuthenticated() &&
                        isValidLineageNode(request.resource.data) &&

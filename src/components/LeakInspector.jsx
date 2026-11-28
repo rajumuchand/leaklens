@@ -25,12 +25,7 @@ export default function LeakInspector() {
     if (!user || !user.email) return;
 
     const telemetryQuery = query(
-      collection(db, 'access_logs'),
-      or(
-        where('owner_uid', '==', user.uid),
-        where('original_sharer', '==', user.email),
-        where('viewer_email', '==', user.email),
-      ),
+      collection(db, 'telemetry_logs'),
       orderBy('timestamp', 'desc'),
       limit(25),
     );
@@ -81,12 +76,9 @@ export default function LeakInspector() {
       }
       try {
         const q = query(
-          collection(db, 'access_logs'),
-          or(
-            where('owner_uid', '==', user.uid),
-            where('original_sharer', '==', user.email || ''),
-          ),
-          limit(20),
+          collection(db, 'telemetry_logs'),
+          orderBy('timestamp', 'desc'),
+          limit(50),
         );
         const snap = await getDocs(q);
         const matchedLogs = snap.docs

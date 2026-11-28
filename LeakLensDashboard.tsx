@@ -1,5 +1,8 @@
 import * as React from "react"
+import { useEffect } from "react"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
+import { addDoc, collection, onSnapshot, orderBy, query, where } from "firebase/firestore"
+import { auth, db } from "./src/firebase"
 
 /**
  * LeakLens / SentinelTrace Interactive Dashboard for Framer
@@ -411,10 +414,9 @@ export default function LeakLensDashboard(props: {
     const [webhookAlert, setWebhookAlert] = React.useState<string | null>(null)
     const [liveAlerts, setLiveAlerts] = React.useState<BeaconAlert[]>([])
     const [activeBeaconToast, setActiveBeaconToast] = React.useState<BeaconAlert | null>(null)
-    const [wsConnected, setWsConnected] = React.useState(false)
     const [firestoreLive, setFirestoreLive] = React.useState(false)
     const [trackingDocId, setTrackingDocId] = React.useState("all")
-    const [accessHistory, setAccessHistory] = React.useState<BeaconAlert[]>([])
+    const [telemetryLogs, setTelemetryLogs] = React.useState<BeaconAlert[]>([])
     const [isLoadingHistory, setIsLoadingHistory] = React.useState(false)
     const [lineageDocId, setLineageDocId] = React.useState("DOC-2026-Q4")
     const [lineageNodes, setLineageNodes] = React.useState<LineageHop[]>([])
@@ -690,16 +692,12 @@ export default function LeakLensDashboard(props: {
         }
     }, [clientOnly, normalizedBackendUrl, buildApiHeaders])
 
-    // --- CANARY WEB BEACON: TRACKING HISTORY & REAL-TIME WEBSOCKET ALERTS ---
+    // --- CANARY WEB BEACON & REAL-TIME CLOUD FIRESTORE LISTENER (onSnapshot) ---
     const resolveEffectiveBackendBase = React.useCallback(() => {
         if (normalizedBackendUrl) return normalizedBackendUrl
         if (typeof window !== "undefined") return window.location.origin
         return DEFAULT_REMOTE_BACKEND
     }, [normalizedBackendUrl])
-
-    const seenBeaconKeysRef = React.useRef<Set<string>>(new Set())
-    const historyBootstrappedRef = React.useRef<boolean>(false)
-    const wsConnectedRef = React.useRef<boolean>(false)
 
     const fetchTrackingHistory = React.useCallback(
         async (docIdOverride?: string) => {
@@ -713,32 +711,7 @@ export default function LeakLensDashboard(props: {
                 if (resp.ok) {
                     const data = await resp.json()
                     if (Array.isArray(data?.records)) {
-                        const records = data.records
-                        if (historyBootstrappedRef.current && !wsConnectedRef.current && records.length > 0) {
-                            const newest = records[0]
-                            const key = `${newest.timestamp}|${newest.doc_id}|${newest.ip_address}|${newest.user_id || newest.original_recipient_id || ""}`
-                            if (!seenBeaconKeysRef.current.has(key) && newest.alert_triggered !== false) {
-                                const alertMsg: BeaconAlert = {
-                                    event: "BEACON_TRIGGERED",
-                                    doc_id: newest.doc_id,
-                                    recipient_id: newest.user_id || newest.original_recipient_id || newest.recipient_id || "Unknown",
-                                    ip_address: newest.ip_address || "unknown",
-                                    reverse_host: newest.reverse_host,
-                                    user_agent: newest.user_agent || "unknown",
-                                    timestamp: newest.timestamp,
-                                    message: "Document opened from unauthorized IP!",
-                                }
-                                setLiveAlerts((prev) => [alertMsg, ...prev.slice(0, 49)])
-                                setActiveBeaconToast(alertMsg)
-                            }
-                        }
-                        records.forEach((r: any) => {
-                            seenBeaconKeysRef.current.add(
-                                `${r.timestamp}|${r.doc_id}|${r.ip_address}|${r.user_id || r.original_recipient_id || ""}`
-                            )
-                        })
-                        historyBootstrappedRef.current = true
-                        setAccessHistory(records)
+                        setTelemetryLogs(data.records)
                     }
                 }
             } catch {
@@ -756,6 +729,20 @@ export default function LeakLensDashboard(props: {
         const rec = authUser?.email || recipientId.trim() || "Operator"
         const base = resolveEffectiveBackendBase()
         try {
+            if (auth.currentUser) {
+                await addDoc(collection(db, "telemetry_logs"), {
+                    doc_id: doc,
+                    original_sharer: rec,
+                    viewer_email: authUser?.email || null,
+                    viewer_name: authUser?.name || null,
+                    ip_address: "client-triggered",
+                    reverse_host: "firestore-realtime",
+                    user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "LeakLens Dashboard",
+                    timestamp: new Date().toISOString(),
+                    alert_triggered: true,
+                    owner_uid: auth.currentUser.uid,
+                }).catch(() => {})
+            }
             await fetch(
                 `${base}/api/beacon/${encodeURIComponent(doc)}/${encodeURIComponent(rec)}/pixel.png?t=${Date.now()}`,
                 { cache: "no-store", headers: buildApiHeaders() }
@@ -766,96 +753,35 @@ export default function LeakLensDashboard(props: {
         }
     }, [trackingDocId, sessionId, recipientId, authUser, resolveEffectiveBackendBase, buildApiHeaders, fetchTrackingHistory])
 
-    React.useEffect(() => {
-        if (typeof window === "undefined") return
-        let isDisposed = false
-        let ws: WebSocket | null = null
-        let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-        const baseHttp = resolveEffectiveBackendBase()
-        const isLocal8000 = baseHttp.includes("localhost:8000") || baseHttp.includes("127.0.0.1:8000")
-        const wsBase = isLocal8000
-            ? "ws://localhost:8000"
-            : baseHttp.replace(/^https:/i, "wss:").replace(/^http:/i, "ws:")
-        const wsUrl = `${wsBase.replace(/\/+$/, "")}/ws/alerts`
-
-        const connectSocket = () => {
-            if (isDisposed) return
-            try {
-                ws = new WebSocket(wsUrl)
-                ws.onopen = () => {
-                    if (!isDisposed) {
-                        wsConnectedRef.current = true
-                        setWsConnected(true)
-                    }
-                }
-                ws.onmessage = (event) => {
-                    try {
-                        const msg: BeaconAlert = JSON.parse(event.data)
-                        if (msg && msg.event === "BEACON_TRIGGERED") {
-                            seenBeaconKeysRef.current.add(
-                                `${msg.timestamp}|${msg.doc_id}|${msg.ip_address}|${msg.user_id || msg.recipient_id || ""}`
-                            )
-                            setLiveAlerts((prev) => [msg, ...prev.slice(0, 49)])
-                            setActiveBeaconToast(msg)
-                            setAccessHistory((prev) => {
-                                const deduped = prev.filter(
-                                    (r) => !(r.timestamp === msg.timestamp && r.doc_id === msg.doc_id && r.ip_address === msg.ip_address)
-                                )
-                                return [
-                                    {
-                                        ...msg,
-                                        original_recipient_id: msg.recipient_id || msg.original_recipient_id,
-                                        alert_triggered: true,
-                                    },
-                                    ...deduped,
-                                ]
-                            })
+    // Active Firestore real-time listener on telemetry_logs (replaces WebSockets and polling)
+    useEffect(() => {
+        const q = query(collection(db, "telemetry_logs"), orderBy("timestamp", "desc"))
+        let isInitialSnapshot = true
+        const unsubscribe = onSnapshot(
+            q,
+            (snapshot) => {
+                const logs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as BeaconAlert[]
+                setTelemetryLogs(logs)
+                setFirestoreLive(true)
+                if (!isInitialSnapshot) {
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === "added") {
+                            const msg = { id: change.doc.id, ...change.doc.data() } as BeaconAlert
+                            if (msg.alert_triggered !== false) {
+                                setLiveAlerts((prev) => [msg, ...prev.slice(0, 49)])
+                                setActiveBeaconToast(msg)
+                            }
                         }
-                    } catch {
-                        // Ignore malformed frames
-                    }
+                    })
                 }
-                ws.onerror = () => {
-                    if (!isDisposed) {
-                        wsConnectedRef.current = false
-                        setWsConnected(false)
-                    }
-                }
-                ws.onclose = () => {
-                    if (!isDisposed) {
-                        wsConnectedRef.current = false
-                        setWsConnected(false)
-                        reconnectTimer = setTimeout(connectSocket, 4000)
-                    }
-                }
-            } catch {
-                setWsConnected(false)
+                isInitialSnapshot = false
+            },
+            () => {
+                setFirestoreLive(false)
             }
-        }
-
-        connectSocket()
-
-        const onBeaconArmed = (evt: Event) => {
-            const detail = (evt as CustomEvent).detail
-            if (detail?.doc_id) {
-                setTrackingDocId(detail.doc_id)
-                fetchTrackingHistory(detail.doc_id)
-            }
-        }
-        window.addEventListener("leaklens:beacon_armed", onBeaconArmed)
-
-        return () => {
-            isDisposed = true
-            if (reconnectTimer) clearTimeout(reconnectTimer)
-            window.removeEventListener("leaklens:beacon_armed", onBeaconArmed)
-            if (ws) {
-                try {
-                    ws.close()
-                } catch {}
-            }
-        }
-    }, [resolveEffectiveBackendBase, fetchTrackingHistory])
+        )
+        return () => unsubscribe()
+    }, [])
 
     const fetchLineageGraph = React.useCallback(
         async (docIdOverride?: string) => {
@@ -874,106 +800,27 @@ export default function LeakLensDashboard(props: {
         [lineageDocId, resolveEffectiveBackendBase, buildApiHeaders]
     )
 
-    React.useEffect(() => {
+    // Real-time Firestore listener on lineage_nodes + initial fetch
+    useEffect(() => {
         fetchTrackingHistory(trackingDocId)
-        if (wsConnected) return
-        const pollId = setInterval(() => {
-            fetchTrackingHistory(trackingDocId)
-            fetchLineageGraph(lineageDocId)
-        }, 3000)
-        return () => clearInterval(pollId)
-    }, [trackingDocId, lineageDocId, wsConnected, fetchTrackingHistory, fetchLineageGraph])
-
-    // Cloud Firestore Real-Time onSnapshot listener when Firebase Client Auth is active
-    React.useEffect(() => {
-        if (typeof window === "undefined") return
-        let disposed = false
-        let unsubLogs: (() => void) | null = null
-        let unsubLineage: (() => void) | null = null
-        let unsubAuth: (() => void) | null = null
-
-        ;(async () => {
-            try {
-                const appUrl = "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js"
-                const authUrl = "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js"
-                const fsUrl = "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js"
-                const fbAppMod: any = await import(/* @vite-ignore */ appUrl)
-                const fbAuthMod: any = await import(/* @vite-ignore */ authUrl)
-                const fbFsMod: any = await import(/* @vite-ignore */ fsUrl)
-                if (disposed) return
-
-                const fbConfig = {
-                    apiKey: "AIzaSyBpyT_htz0GZaIo0cRwYvosZmBRMKYp9sY",
-                    authDomain: "leaklens-77637.firebaseapp.com",
-                    projectId: "leaklens-77637",
-                    storageBucket: "leaklens-77637.firebasestorage.app",
-                    messagingSenderId: "279675539046",
-                    appId: "1:279675539046:web:13ce79ad629d45972367a7",
+        fetchLineageGraph(lineageDocId)
+        const doc = lineageDocId.trim() || "DOC-2026-Q4"
+        const linQ = query(
+            collection(db, "lineage_nodes"),
+            where("doc_id", "==", doc),
+            orderBy("hop_level", "asc")
+        )
+        const unsubscribe = onSnapshot(
+            linQ,
+            (snap) => {
+                if (!snap.empty) {
+                    setLineageNodes(snap.docs.map((d) => d.data() as LineageHop))
                 }
-                const fbApp = fbAppMod.getApps().length ? fbAppMod.getApp() : fbAppMod.initializeApp(fbConfig)
-                const fbAuth = fbAuthMod.getAuth(fbApp)
-                const fbDb = fbFsMod.getFirestore(fbApp)
-
-                unsubAuth = fbAuthMod.onAuthStateChanged(fbAuth, async (user: any) => {
-                    if (unsubLogs) { unsubLogs(); unsubLogs = null }
-                    if (unsubLineage) { unsubLineage(); unsubLineage = null }
-                    if (!user?.email || disposed) {
-                        setFirestoreLive(false)
-                        return
-                    }
-                    const idTok = await user.getIdToken().catch(() => "")
-                    if (idTok) window.localStorage.setItem("firebase_id_token", idTok)
-
-                    const logsQ = fbFsMod.query(
-                        fbFsMod.collection(fbDb, "access_logs"),
-                        fbFsMod.or(
-                            fbFsMod.where("owner_uid", "==", user.uid),
-                            fbFsMod.where("original_sharer", "==", user.email),
-                            fbFsMod.where("viewer_email", "==", user.email)
-                        ),
-                        fbFsMod.orderBy("timestamp", "desc"),
-                        fbFsMod.limit(50)
-                    )
-                    unsubLogs = fbFsMod.onSnapshot(
-                        logsQ,
-                        (snap: any) => {
-                            if (!disposed) setFirestoreLive(true)
-                            if (!snap.empty && !disposed) {
-                                setAccessHistory(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })))
-                            }
-                        },
-                        () => {
-                            if (!disposed) setFirestoreLive(false)
-                        }
-                    )
-
-                    const doc = lineageDocId.trim() || "DOC-2026-Q4"
-                    const linQ = fbFsMod.query(
-                        fbFsMod.collection(fbDb, "lineage_nodes"),
-                        fbFsMod.where("doc_id", "==", doc),
-                        fbFsMod.orderBy("hop_level", "asc"),
-                        fbFsMod.limit(50)
-                    )
-                    unsubLineage = fbFsMod.onSnapshot(
-                        linQ,
-                        (snap: any) => {
-                            if (!snap.empty && !disposed) {
-                                setLineageNodes(snap.docs.map((d: any) => d.data()))
-                            }
-                        },
-                        () => {}
-                    )
-                })
-            } catch {}
-        })()
-
-        return () => {
-            disposed = true
-            if (unsubLogs) unsubLogs()
-            if (unsubLineage) unsubLineage()
-            if (unsubAuth) unsubAuth()
-        }
-    }, [lineageDocId])
+            },
+            () => {}
+        )
+        return () => unsubscribe()
+    }, [lineageDocId, trackingDocId, fetchLineageGraph, fetchTrackingHistory])
 
     const handleShareProtectedLink = React.useCallback(
         async (channel: "copy" | "whatsapp" | "email") => {
@@ -2715,7 +2562,7 @@ export default function LeakLensDashboard(props: {
                         </div>
                     </div>
 
-                    {/* LIVE TELEMETRY & ACCESS LOGS TABLE (FIRESTORE + WEBSOCKETS + AUTO-SYNC) */}
+                    {/* LIVE TELEMETRY & ACCESS LOGS TABLE (CLOUD FIRESTORE onSnapshot) */}
                     <div
                         style={{
                             gridColumn: "1 / -1",
@@ -2745,11 +2592,7 @@ export default function LeakLensDashboard(props: {
                                         color: "#2BD8C8",
                                     }}
                                 >
-                                    {wsConnected
-                                        ? "● WS /ws/alerts CONNECTED"
-                                        : firestoreLive
-                                            ? "● FIRESTORE LIVE (onSnapshot)"
-                                            : "● REALTIME TELEMETRY ACTIVE"}
+                                    {firestoreLive ? "● FIRESTORE LIVE (onSnapshot)" : "● FIRESTORE TELEMETRY STREAM"}
                                 </span>
                                 {liveAlerts.length > 0 && (
                                     <span
@@ -2841,14 +2684,22 @@ export default function LeakLensDashboard(props: {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {accessHistory.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={7} style={{ padding: "16px 10px", textAlign: "center", color: "#64748b" }}>
-                                                No Canary Beacon hits logged yet for &quot;{trackingDocId || "all"}&quot;. Share a /view link or click &quot;Simulate Beacon Hit&quot;.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        accessHistory.map((log, idx) => (
+                                    {(() => {
+                                        const filter = trackingDocId.trim()
+                                        const visibleLogs =
+                                            !filter || filter === "all" || filter === "*"
+                                                ? telemetryLogs
+                                                : telemetryLogs.filter((l) => l.doc_id === filter)
+                                        if (visibleLogs.length === 0) {
+                                            return (
+                                                <tr>
+                                                    <td colSpan={7} style={{ padding: "16px 10px", textAlign: "center", color: "#64748b" }}>
+                                                        No Canary Beacon hits logged yet for &quot;{trackingDocId || "all"}&quot;. Share a /view link or click &quot;Simulate Beacon Hit&quot;.
+                                                    </td>
+                                                </tr>
+                                            )
+                                        }
+                                        return visibleLogs.map((log, idx) => (
                                             <tr
                                                 key={`${log.id ?? idx}-${log.timestamp}`}
                                                 style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", color: "#e2e8f0" }}
@@ -2880,7 +2731,7 @@ export default function LeakLensDashboard(props: {
                                                 </td>
                                             </tr>
                                         ))
-                                    )}
+                                    })()}
                                 </tbody>
                             </table>
                         </div>
